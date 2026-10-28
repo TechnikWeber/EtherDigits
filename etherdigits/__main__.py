@@ -1,4 +1,4 @@
-"""Command line: list voices, render a transmission to WAV or MP3."""
+"""Command line: voices, transmissions, pads, encryption."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import otp
 from .groups import DEFAULT_GROUP_SIZE, GroupError, parse_groups, random_groups
 from .render import DEFAULT_RATE, EFFECTS, render, write_audio
 from .script import INTERVALS, Format, Transmission, build_script, transcript
@@ -60,6 +61,85 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_text(value: str | None) -> str:
+    """The argument, or standard input when it is missing or "-"."""
+    if value is None or value == "-":
+        return sys.stdin.read()
+    return value
+
+
+def cmd_pad_new(args: argparse.Namespace) -> int:
+    out = Path(args.output)
+    if out.exists() and not args.force:
+        raise otp.OtpError(f"{out} exists. Overwriting a pad destroys its keys; use --force if you mean it")
+    if args.no_codebook:
+        codebook: dict | None = {}
+    elif args.codebook:
+        codebook = otp.parse_codebook(Path(args.codebook).read_text(encoding="utf-8"))
+    else:
+        codebook = None
+    pad = otp.new_pad(args.pages, args.groups, args.lang, codebook, spaces=not args.no_spaces, name=args.name or "")
+    otp.save_pad(pad, out)
+    print(f"wrote {out}: {len(pad.pages)} pages of {args.groups} groups, checkerboard {pad.language}, "
+          f"{len(pad.codebook)} codebook words")
+    print("Hand an identical copy to the receiver in person, never over the internet.")
+    return 0
+
+
+def cmd_pad_info(args: argparse.Namespace) -> int:
+    pad = otp.load_pad(Path(args.pad))
+    pages = len(pad.pages)
+    groups = len(next(iter(pad.pages.values()))) // pad.group_size
+    print(f"pad        {pad.name or Path(args.pad).name}")
+    print(f"created    {pad.created}")
+    print(f"pages      {pages} ({len(pad.unused())} unused, {len(pad.used)} used), {groups} groups each")
+    print(f"language   {pad.language}, codebook {len(pad.codebook)} words, spaces {'on' if pad.spaces else 'off'}")
+    return 0
+
+
+def cmd_encrypt(args: argparse.Namespace) -> int:
+    path = Path(args.pad)
+    pad = otp.load_pad(path)
+    text = _read_text(args.text)
+    _, dropped = otp.normalize(text)
+    groups = otp.encrypt(text, pad, args.page)
+    otp.save_pad(pad, path)
+    if dropped:
+        print("left out: " + " ".join(dropped), file=sys.stderr)
+    print(f"page {groups[0]} is now marked used, {len(pad.unused())} pages left", file=sys.stderr)
+    print(" ".join(groups))
+    return 0
+
+
+def cmd_decrypt(args: argparse.Namespace) -> int:
+    path = Path(args.pad)
+    pad = otp.load_pad(path)
+    text = otp.decrypt(_read_text(args.groups), pad)
+    otp.save_pad(pad, path)
+    print(text)
+    return 0
+
+
+def cmd_checkerboard(args: argparse.Namespace) -> int:
+    layout = otp.LAYOUTS[args.lang]
+    signs = {v: k for k, v in otp.SIGNS.items()}
+    names = {" ": "space", otp.FIG: "fig", otp.CODE: "code"}
+    print("     " + "  ".join(f"{i:>5}" for i in range(10)))
+    print("     " + "  ".join(f"{c:>5}" for c in layout["top"].ljust(10)))
+    for row in ("7", "8"):
+        print(f"  {row}  " + "  ".join(f"{c:>5}" for c in layout[row]))
+    nine = []
+    for i in range(10):
+        code = "9" + str(i)
+        sign = signs.get(code)
+        nine.append(names.get(sign, sign) if sign else names.get(code, ""))
+    print("  9  " + "  ".join(f"{c:>5}" for c in nine))
+    print()
+    print("fig: 98, every digit twice, 98   (1830 -> 98 11 88 33 00 98)")
+    print("code: 99 and a three-digit codebook number")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="etherdigits", description="Run your own numbers station.")
     p.add_argument("--version", action="version", version=f"EtherDigits {__version__}")
@@ -89,6 +169,38 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--format-file", metavar="JSON", help="format settings from a JSON file")
     r.add_argument("--print", action="store_true", help="also print the transcript")
     r.set_defaults(func=cmd_render)
+
+    pad = sub.add_parser("pad", help="one-time pads: create, show")
+    pad_sub = pad.add_subparsers(dest="pad_command", required=True)
+    pn = pad_sub.add_parser("new", help="create a new pad file")
+    pn.add_argument("-o", "--output", required=True, metavar="FILE", help="pad file to write (.json)")
+    pn.add_argument("--pages", type=int, default=20, help="number of key pages (default: 20)")
+    pn.add_argument("--groups", type=int, default=50, help="groups per page (default: 50)")
+    pn.add_argument("--lang", choices=sorted(otp.LAYOUTS), default="de", help="checkerboard language (default: de)")
+    pn.add_argument("--codebook", metavar="FILE", help="own codebook: lines of 'code word'")
+    pn.add_argument("--no-codebook", action="store_true", help="no codebook at all")
+    pn.add_argument("--no-spaces", action="store_true", help="leave out spaces between words (shorter)")
+    pn.add_argument("--name", help="a name for the pad")
+    pn.add_argument("--force", action="store_true", help="overwrite an existing file")
+    pn.set_defaults(func=cmd_pad_new)
+    pi = pad_sub.add_parser("info", help="show pages left and settings")
+    pi.add_argument("pad", metavar="FILE")
+    pi.set_defaults(func=cmd_pad_info)
+
+    e = sub.add_parser("encrypt", help="encrypt text with the next unused page of a pad")
+    e.add_argument("--pad", required=True, metavar="FILE")
+    e.add_argument("--page", help="use this page id instead of the next unused one")
+    e.add_argument("text", nargs="?", help="the message (default: read standard input)")
+    e.set_defaults(func=cmd_encrypt)
+
+    d = sub.add_parser("decrypt", help="decrypt digit groups with a pad")
+    d.add_argument("--pad", required=True, metavar="FILE")
+    d.add_argument("groups", nargs="?", help="indicator group and message (default: read standard input)")
+    d.set_defaults(func=cmd_decrypt)
+
+    c = sub.add_parser("checkerboard", help="print the checkerboard for pencil and paper")
+    c.add_argument("--lang", choices=sorted(otp.LAYOUTS), default="de")
+    c.set_defaults(func=cmd_checkerboard)
     return p
 
 

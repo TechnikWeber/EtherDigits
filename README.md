@@ -2,8 +2,9 @@
 
 <p>
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange">
+  <a href="https://github.com/TechnikWeber/EtherDigits/actions/workflows/tests.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/EtherDigits/tests.yml?branch=main&label=tests"></a>
   <img alt="Platform: Linux | Windows | macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue">
-  <img alt="Voices: Deutsch | English" src="https://img.shields.io/badge/voices-Deutsch%20%7C%20English-informational">
+  <img alt="UI and voices: English | Deutsch" src="https://img.shields.io/badge/UI%20%26%20voices-English%20%7C%20Deutsch-informational">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
@@ -20,8 +21,8 @@ REPEAT 21347 47890 11203
 END
 ```
 
-> Version 0.1 is the core: voices, transmission format and audio files. The
-> scheduler, web interface, radio control and the offline pad tool follow; see
+> Version 0.2: voices, transmission format, audio files and the one-time pad
+> tool. The scheduler, web interface and radio control follow; see
 > [docs/plan.md](docs/plan.md).
 
 ## Install
@@ -77,8 +78,48 @@ transmission cannot be broken, not even in principle. The rules are strict: the
 key must be truly random, as long as the message, used once and then destroyed.
 Reusing pages is how the Soviet traffic in the VENONA project was read.
 
-EtherDigits will ship the pad tool separately (stage 2 of the plan), so the
-station itself never holds keys.
+The pad tool below is kept apart from the station, so the station itself never
+holds keys.
+
+## The pad tool
+
+`pad_tool.html` is a single file that runs in any browser, offline. It makes
+pads of key pages, encrypts, decrypts and prints pads and the checkerboard for
+pencil-and-paper use. It never touches the network and refuses to use a page
+twice.
+
+![The pad tool: a message on the left, the digit groups to send on the right](docs/pad-tool.jpg)
+
+The same works from the command line, compatible with the browser tool:
+
+```sh
+python -m etherdigits pad new -o pad.json --pages 20 --groups 50 --lang de
+python -m etherdigits encrypt --pad pad.json "Treffen morgen 18:30 Uhr am Bahnhof"
+python -m etherdigits decrypt --pad pad.json "36154 21490 ..."
+python -m etherdigits pad info pad.json
+python -m etherdigits checkerboard --lang de
+```
+
+Sender and receiver need identical copies of the pad. Hand it over in person,
+printed or on a USB stick, never over the internet. Save the pad file after
+every encryption, so it remembers which pages are used.
+
+**The format.** The first group is the page id, unencrypted, so the receiver
+knows which page to take. Then follow the message digits plus the key page,
+added without carry. Inside, the text is written with a straddling checkerboard:
+
+| | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| | E | N | I | S | R | A | T | | | |
+| **7** | D | H | U | L | C | G | M | O | B | W |
+| **8** | F | K | Z | P | V | J | Y | X | Q | : |
+| **9** | space | . | , | ? | - | / | ( | ) | fig | code |
+
+That is the German layout; the English one has E T A O I N S in the top row.
+Numbers are written as `98`, every digit twice, `98`. Codebook words as `99`
+and a three-digit number. The last group is filled with 9s, which the decoder
+ignores. A pad file also carries its language, codebook and the list of used
+pages.
 
 ## Voices
 
@@ -95,6 +136,9 @@ internet stream, a dummy load, local playback, or a service licensed for it.
 ```sh
 .venv/bin/python -m unittest
 ```
+
+`tests/test_interop.py` runs the JavaScript engine from `pad_tool.html` with
+Node.js and checks that it agrees with `etherdigits/otp.py` digit for digit.
 
 New voice packs are built from Piper models with `scripts/build_voicepack.py`
 (needs `pip install piper-tts`).

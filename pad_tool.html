@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'">
+<title>EtherDigits Pad Tool</title>
+<style>
+  :root{
+    --ink:#0C141B; --panel:#131F29; --panel2:#0F1922; --field:#0A121A; --line:#223240;
+    --amber:#F4B740; --blue:#4C9BE8; --green:#5FD08A; --danger:#E4636F;
+    --text:#E8EFF4; --muted:#8299AA; --press:#1C2C39;
+    --mono:ui-monospace,"Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+    color-scheme:dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --ink:#F3F5F7; --panel:#FFFFFF; --panel2:#FAFBFC; --field:#F6F8FA; --line:#D5DDE4;
+      --amber:#A86A00; --blue:#1F6FC5; --green:#1E8A4C; --danger:#C0392B;
+      --text:#13202B; --muted:#5A6E7E; --press:#E3EAF0;
+      color-scheme:light;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ink); color:var(--text); font-family:var(--sans); line-height:1.5;
+       -webkit-font-smoothing:antialiased; padding:20px 16px 60px; max-width:1100px; margin:0 auto}
+  .top{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+  .top h1{font-size:19px; margin:0; letter-spacing:.02em}
+  .top .sub{color:var(--muted); font-size:13px; flex:1; min-width:200px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber);
+       display:inline-block;margin-right:8px;vertical-align:middle}
+  .lang{display:flex; gap:4px}
+  button{font-family:var(--sans); font-size:14px; cursor:pointer}
+  .btn{background:var(--press); color:var(--text); border:1px solid var(--line); border-radius:9px;
+       padding:9px 14px; font-weight:500}
+  .btn:hover{border-color:var(--blue)}
+  .btn.primary{background:var(--blue); border-color:var(--blue); color:#fff}
+  .btn.warn{background:var(--amber); border-color:var(--amber); color:#1a1200}
+  .btn.small{padding:5px 10px; font-size:13px}
+  .btn[aria-pressed="true"]{border-color:var(--amber); color:var(--amber)}
+  .btn:disabled{opacity:.45; cursor:not-allowed}
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible{outline:2px solid var(--blue); outline-offset:1px}
+
+  .status{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:16px 0 0;
+          padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--panel)}
+  .status .info{flex:1; min-width:220px; font-size:14px}
+  .status .info b{font-family:var(--mono)}
+  .status.dirty{border-color:var(--amber)}
+  .pill{font-size:12px; padding:2px 8px; border-radius:20px; border:1px solid var(--line); color:var(--muted)}
+  .pill.warn{color:var(--amber); border-color:var(--amber)}
+
+  .tabs{display:flex; gap:4px; margin:18px 0 0; border-bottom:1px solid var(--line); overflow-x:auto}
+  .tabs button{background:none; border:0; color:var(--muted); padding:10px 14px; font-weight:500;
+               border-bottom:2px solid transparent; white-space:nowrap}
+  .tabs button[aria-selected="true"]{color:var(--text); border-bottom-color:var(--amber)}
+  section[role=tabpanel]{padding-top:16px}
+  section[hidden]{display:none}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2)); border:1px solid var(--line);
+        border-radius:14px; padding:18px; min-width:0}
+  .card h2{font-size:12px; color:var(--muted); letter-spacing:.07em; text-transform:uppercase; margin:0 0 12px; font-weight:600}
+  .card p{margin:0 0 10px; font-size:14px}
+  .card p.muted, .muted{color:var(--muted); font-size:13px}
+  label{display:block; font-size:12px; color:var(--muted); margin:10px 0 5px; letter-spacing:.03em}
+  label.check{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); letter-spacing:0}
+  input[type=text], input[type=number], select, textarea{width:100%; background:var(--field); color:var(--text);
+        border:1px solid var(--line); border-radius:9px; padding:9px 11px; font-size:14px; font-family:var(--sans)}
+  textarea{font-family:var(--mono); resize:vertical; min-height:90px}
+  textarea.code{min-height:180px; font-size:13px}
+  .row{display:flex; gap:12px; flex-wrap:wrap}
+  .row > *{flex:1; min-width:120px}
+  .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px}
+
+  .out{font-family:var(--mono); font-size:16px; line-height:1.9; letter-spacing:.04em; background:var(--field);
+       border:1px solid var(--line); border-radius:10px; padding:12px 14px; white-space:pre-wrap; word-break:break-word; min-height:52px}
+  .out .ind{color:var(--amber)}
+  .stats{display:flex; gap:14px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:8px}
+  .stats b{color:var(--text); font-family:var(--mono); font-weight:500}
+  .note{font-size:13px; border-left:3px solid var(--blue); padding:6px 10px; margin:12px 0 0; background:var(--field); border-radius:0 8px 8px 0}
+  .note.warn{border-left-color:var(--amber)}
+  .note.bad{border-left-color:var(--danger)}
+  .note:empty, code:empty{display:none}
+
+  .pages{display:flex; flex-wrap:wrap; gap:6px; font-family:var(--mono); font-size:13px}
+  .pages span{padding:3px 7px; border-radius:6px; border:1px solid var(--line)}
+  .pages span.used{color:var(--muted); text-decoration:line-through; opacity:.6}
+  .pages span.next{border-color:var(--green); color:var(--green)}
+
+  table.board{border-collapse:collapse; font-family:var(--mono); font-size:15px; margin:4px 0 8px}
+  table.board td, table.board th{border:1px solid var(--line); width:46px; height:36px; text-align:center; padding:0}
+  table.board th{color:var(--muted); font-weight:500; font-size:13px}
+  table.board td.sp{font-size:11px; color:var(--blue)}
+  .board-wrap{overflow-x:auto}
+  .codebook{columns:3 150px; font-family:var(--mono); font-size:13px; margin:0; padding:0; list-style:none}
+  .codebook li{break-inside:avoid; padding:1px 0}
+  .codebook b{color:var(--amber); font-weight:500; margin-right:6px}
+  details{margin-top:10px; font-size:13px}
+  summary{cursor:pointer; color:var(--muted)}
+  code{font-family:var(--mono); font-size:13px; background:var(--field); border:1px solid var(--line); border-radius:5px; padding:0 4px}
+
+  #print{display:none}
+  @media print{
+    @page{margin:14mm}
+    body{background:#fff; color:#000; padding:0; max-width:none}
+    body > *:not(#print){display:none !important}
+    #print{display:block}
+    .sheet{page-break-after:always; break-after:page; font-family:var(--mono); color:#000}
+    .sheet:last-child{page-break-after:auto; break-after:auto}
+    .sheet header{display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:12px}
+    .sheet header .pid{font-size:30px; font-weight:700; letter-spacing:.1em}
+    .sheet header .meta{font-size:11px; text-align:right}
+    .sheet table{border-collapse:collapse; font-size:15px; letter-spacing:.06em}
+    .sheet table td{padding:5px 9px}
+    .sheet table td.n{color:#666; font-size:10px; padding-right:12px}
+    .sheet footer{margin-top:14px; font-size:11px; border-top:1px solid #000; padding-top:6px}
+    .sheet table.board td, .sheet table.board th{border:1px solid #000; color:#000; width:15mm; height:11mm}
+    .sheet .codebook b{color:#000; font-weight:700}
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1><span class="dot"></span>EtherDigits</h1>
+  <div class="sub" data-i18n="subtitle"></div>
+  <div class="lang" role="group" aria-label="Language">
+    <button class="btn small" data-lang="de">DE</button>
+    <button class="btn small" data-lang="en">EN</button>
+  </div>
+</div>
+
+<div class="status" id="status">
+  <div class="info" id="statusInfo"></div>
+  <input type="file" id="fileInput" accept=".json,application/json" hidden>
+  <button class="btn" id="loadBtn" data-i18n="load"></button>
+  <button class="btn" id="saveBtn" data-i18n="save" disabled></button>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="pad" data-i18n="tab_pad"></button>
+  <button role="tab" data-tab="enc" data-i18n="tab_enc"></button>
+  <button role="tab" data-tab="dec" data-i18n="tab_dec"></button>
+  <button role="tab" data-tab="board" data-i18n="tab_board"></button>
+</nav>
+
+<!-- PAD -->
+<section role="tabpanel" id="tab-pad">
+  <div class="grid">
+    <div class="card">
+      <h2 data-i18n="new_pad"></h2>
+      <p class="muted" data-i18n="new_pad_hint"></p>
+      <label for="padName" data-i18n="pad_name"></label>
+      <input type="text" id="padName" maxlength="60">
+      <div class="row">
+        <div><label for="padPages" data-i18n="pages"></label><input type="number" id="padPages" min="1" max="1000" value="20"></div>
+        <div><label for="padGroups" data-i18n="groups_per_page"></label><input type="number" id="padGroups" min="5" max="1000" value="50"></div>
+      </div>
+      <label for="padLang" data-i18n="board_lang"></label>
+      <select id="padLang"><option value="de">Deutsch</option><option value="en">English</option></select>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="padSpaces" checked> <span data-i18n="spaces"></span></label>
+      <label for="padCodebook" data-i18n="codebook"></label>
+      <textarea id="padCodebook" class="code" spellcheck="false"></textarea>
+      <p class="muted" data-i18n="codebook_hint"></p>
+      <div class="actions"><button class="btn primary" id="newPadBtn" data-i18n="create"></button></div>
+      <div class="note bad" id="newPadMsg"></div>
+    </div>
+    <div>
+      <div class="card">
+        <h2 data-i18n="handover"></h2>
+        <p data-i18n="handover_1"></p>
+        <p data-i18n="handover_2"></p>
+        <p data-i18n="handover_3"></p>
+        <div class="actions">
+          <button class="btn" id="printPadBtn" data-i18n="print_pad" disabled></button>
+          <button class="btn" id="printBoardBtn" data-i18n="print_board"></button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2 data-i18n="page_list"></h2>
+        <div class="pages" id="pageList"></div>
+        <p class="muted" id="pageListEmpty" data-i18n="no_pad"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ENCRYPT -->
+<section role="tabpanel" id="tab-enc" hidden>
+  <div class="grid">
+    <div class="card">
+      <h2 data-i18n="message"></h2>
+      <textarea id="encText" rows="6" spellcheck="true"></textarea>
+      <div class="stats" id="encStats"></div>
+      <div class="note warn" id="encDropped"></div>
+      <label for="encPage" data-i18n="page_to_use"></label>
+      <select id="encPage"></select>
+      <div class="actions"><button class="btn primary" id="encBtn" data-i18n="encrypt"></button></div>
+      <div class="note bad" id="encMsg"></div>
+      <details><summary data-i18n="what_is_sent"></summary><div class="out" id="encPreview" style="font-size:13px;margin-top:8px"></div></details>
+    </div>
+    <div class="card">
+      <h2 data-i18n="groups_to_send"></h2>
+      <div class="out" id="encOut"></div>
+      <div class="actions"><button class="btn" id="encCopy" data-i18n="copy" disabled></button></div>
+      <div class="note warn" id="encDone"></div>
+      <p class="muted" style="margin-top:12px" data-i18n="send_hint"></p>
+      <code id="encCmd" style="display:block;padding:8px;white-space:pre-wrap;word-break:break-all"></code>
+    </div>
+  </div>
+</section>
+
+<!-- DECRYPT -->
+<section role="tabpanel" id="tab-dec" hidden>
+  <div class="grid">
+    <div class="card">
+      <h2 data-i18n="received"></h2>
+      <textarea id="decText" rows="5" spellcheck="false"></textarea>
+      <p class="muted" data-i18n="received_hint"></p>
+      <div id="manualKey">
+        <p class="note" data-i18n="manual_hint"></p>
+        <label for="decKey" data-i18n="manual_key"></label>
+        <textarea id="decKey" rows="4" spellcheck="false"></textarea>
+        <label for="decLang" data-i18n="board_lang"></label>
+        <select id="decLang"><option value="de">Deutsch</option><option value="en">English</option></select>
+      </div>
+      <div class="actions"><button class="btn primary" id="decBtn" data-i18n="decrypt"></button></div>
+      <div class="note bad" id="decMsg"></div>
+    </div>
+    <div class="card">
+      <h2 data-i18n="plain_text"></h2>
+      <div class="out" id="decOut"></div>
+      <div class="note warn" id="decDone"></div>
+      <details><summary data-i18n="digits_detail"></summary><div class="out" id="decDigits" style="font-size:13px;margin-top:8px"></div></details>
+    </div>
+  </div>
+</section>
+
+<!-- CHECKERBOARD -->
+<section role="tabpanel" id="tab-board" hidden>
+  <div class="grid">
+    <div class="card">
+      <h2 data-i18n="board"></h2>
+      <select id="boardLang" style="max-width:200px"><option value="de">Deutsch</option><option value="en">English</option></select>
+      <div class="board-wrap" id="boardTable" style="margin-top:12px"></div>
+      <p data-i18n="board_rule_1"></p>
+      <p data-i18n="board_rule_2"></p>
+      <p data-i18n="board_rule_3"></p>
+      <p data-i18n="board_rule_4"></p>
+      <label for="tryText" data-i18n="try_it"></label>
+      <input type="text" id="tryText">
+      <div class="out" id="tryOut" style="margin-top:8px;font-size:14px"></div>
+    </div>
+    <div class="card">
+      <h2 data-i18n="how_it_works"></h2>
+      <p data-i18n="how_1"></p>
+      <p data-i18n="how_2"></p>
+      <p data-i18n="how_3"></p>
+      <p data-i18n="how_4"></p>
+      <h2 style="margin-top:18px" data-i18n="codebook"></h2>
+      <ul class="codebook" id="boardCodebook"></ul>
+    </div>
+  </div>
+</section>
+
+<div id="print"></div>
+
+<!-- The engine: pure functions, no page access. It must stay in step with
+     etherdigits/otp.py; tests/test_interop.py runs both on the same inputs. -->
+<script id="engine">
+const Engine = (() => {
+  "use strict";
+  const GROUP_SIZE = 5, FIG = "98", CODE = "99", PAD_DIGIT = "9", ASCII_DIGITS = "0123456789";
+  const LAYOUTS = {
+    de: {top: "ENISRAT", "7": "DHULCGMOBW", "8": "FKZPVJYXQ:"},
+    en: {top: "ETAOINS", "7": "RHDLCUMWFG", "8": "YPBVKJXQZ:"},
+  };
+  const SIGNS = {" ": "90", ".": "91", ",": "92", "?": "93", "-": "94", "/": "95", "(": "96", ")": "97"};
+  const SIGN_ALIASES = {"!": ".", ";": ",", "–": "-", "—": "-", "\n": " ", "\t": " ", "\r": " "};
+  const UMLAUTS = {"ä": "AE", "Ä": "AE", "ö": "OE", "Ö": "OE", "ü": "UE", "Ü": "UE", "ß": "SS", "ẞ": "SS"};
+  const DEFAULT_CODEBOOKS = {
+    de: [["100","ABBRECHEN"],["101","ABFAHRT"],["102","ADRESSE"],["103","ANKUNFT"],["104","BAHNHOF"],
+         ["105","BESTÄTIGEN"],["106","DRINGEND"],["107","FLUGHAFEN"],["108","GEFAHR"],["109","GELD"],
+         ["110","GESTERN"],["111","HEUTE"],["112","HOTEL"],["113","KONTAKT"],["114","MORGEN"],
+         ["115","NACHRICHT"],["116","PAKET"],["117","SOFORT"],["118","TELEFON"],["119","TREFFEN"],
+         ["120","TREFFPUNKT"],["121","UHR"],["122","VERSCHIEBEN"],["123","WARTEN"],["124","WIEDERHOLEN"],
+         ["125","MONTAG"],["126","DIENSTAG"],["127","MITTWOCH"],["128","DONNERSTAG"],["129","FREITAG"],
+         ["130","SAMSTAG"],["131","SONNTAG"],["132","NICHT"],["133","UND"],["134","ODER"]],
+    en: [["100","ABORT"],["101","DEPARTURE"],["102","ADDRESS"],["103","ARRIVAL"],["104","STATION"],
+         ["105","CONFIRM"],["106","URGENT"],["107","AIRPORT"],["108","DANGER"],["109","MONEY"],
+         ["110","YESTERDAY"],["111","TODAY"],["112","HOTEL"],["113","CONTACT"],["114","TOMORROW"],
+         ["115","MESSAGE"],["116","PACKAGE"],["117","IMMEDIATELY"],["118","TELEPHONE"],["119","MEET"],
+         ["120","MEETING"],["121","OCLOCK"],["122","POSTPONE"],["123","WAIT"],["124","REPEAT"],
+         ["125","MONDAY"],["126","TUESDAY"],["127","WEDNESDAY"],["128","THURSDAY"],["129","FRIDAY"],
+         ["130","SATURDAY"],["131","SUNDAY"],["132","NOT"],["133","AND"],["134","OR"]],
+  };
+
+  class OtpError extends Error {
+    constructor(message, code = "", vars = {}) { super(message); this.code = code; this.vars = vars; }
+  }
+  const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const isDigit = c => c.length === 1 && ASCII_DIGITS.includes(c);
+  const isLetter = c => c.length === 1 && c >= "A" && c <= "Z";
+
+  // Codebooks are arrays of [code, word]: plain objects would re-sort numeric keys.
+  function normalize(text) {
+    const out = [], dropped = [];
+    for (let ch of text) {
+      if (has(SIGN_ALIASES, ch)) ch = SIGN_ALIASES[ch];
+      let up = has(UMLAUTS, ch) ? UMLAUTS[ch] : undefined;
+      if (up === undefined) {
+        const base = Array.from(ch.normalize("NFD"))[0];
+        const low = base.toLowerCase();
+        up = (low >= "a" && low <= "z") ? base.toUpperCase() : base;
+      }
+      for (const c of up) {
+        if (isLetter(c) || isDigit(c) || has(SIGNS, c) || c === ":") out.push(c);
+        else if (!dropped.includes(ch)) dropped.push(ch);
+      }
+    }
+    const text2 = out.join("").replace(/ {2,}/g, " ").replace(/^ +| +$/g, "");
+    return [text2, dropped];
+  }
+
+  function table(lang) {
+    if (!has(LAYOUTS, lang)) throw new OtpError(`unknown checkerboard language ${JSON.stringify(lang)}`, "lang", {lang});
+    const layout = LAYOUTS[lang], t = {};
+    Array.from(layout.top).forEach((ch, i) => { t[ch] = String(i); });
+    for (const row of ["7", "8"]) Array.from(layout[row]).forEach((ch, i) => { t[ch] = row + i; });
+    Object.assign(t, SIGNS);
+    return t;
+  }
+
+  // Like a Python dict: a repeated code replaces the word but keeps its first position.
+  function normalizeCodebook(book) {
+    const byCode = new Map();
+    for (const [code0, word] of book || []) byCode.set(String(code0).trim(), word);
+    const result = [], seen = new Set();
+    for (const [code, word] of byCode) {
+      if (!/^[0-9]{3}$/.test(code)) throw new OtpError(`codebook code ${JSON.stringify(code)} must be three digits`, "cb_code", {code});
+      const [norm] = normalize(String(word));
+      if (!/^[A-Z]+$/.test(norm)) throw new OtpError(`codebook entry ${code} must be a single word: ${JSON.stringify(word)}`, "cb_word", {code});
+      if (seen.has(norm)) throw new OtpError(`codebook word ${norm} appears twice`, "cb_dup", {word: norm});
+      seen.add(norm);
+      result.push([code, norm]);
+    }
+    return result;
+  }
+
+  function parseCodebook(text) {
+    const book = [];
+    text.split(/\r?\n/).forEach((line0, n) => {
+      const line = line0.split("#")[0].trim();
+      if (!line) return;
+      const m = line.replace(/=/g, " ").trim().match(/^(\S+)\s+(.*)$/);
+      if (!m) throw new OtpError(`codebook line ${n + 1}: expected 'code word'`, "cb_line", {line: n + 1});
+      book.push([m[1], m[2].trim()]);
+    });
+    return normalizeCodebook(book);
+  }
+
+  function encode(text, lang = "de", codebook = [], spaces = true) {
+    const t = table(lang);
+    const words = new Map(normalizeCodebook(codebook).map(([c, w]) => [w, c]));
+    let [norm] = normalize(text);
+    if (!spaces) norm = norm.replace(/ /g, "");
+    const out = [];
+    let i = 0;
+    while (i < norm.length) {
+      const ch = norm[i];
+      if (isDigit(ch)) {
+        let j = i;
+        while (j < norm.length && isDigit(norm[j])) j++;
+        out.push(FIG + Array.from(norm.slice(i, j)).map(d => d + d).join("") + FIG);
+        i = j;
+      } else if (isLetter(ch)) {
+        let j = i;
+        while (j < norm.length && isLetter(norm[j])) j++;
+        const word = norm.slice(i, j);
+        out.push(words.has(word) ? CODE + words.get(word) : Array.from(word).map(c => t[c]).join(""));
+        i = j;
+      } else {
+        out.push(t[ch]);
+        i++;
+      }
+    }
+    return out.join("");
+  }
+
+  function decode(digits0, lang = "de", codebook = []) {
+    const reverse = {};
+    for (const [k, v] of Object.entries(table(lang))) reverse[v] = k;
+    const book = new Map(normalizeCodebook(codebook));
+    const digits = Array.from(digits0).filter(isDigit).join("");
+    const out = [], n = digits.length;
+    let i = 0;
+    while (i < n) {
+      const d = digits[i];
+      if (!"789".includes(d)) { out.push(reverse[d]); i++; continue; }
+      if (i + 1 >= n) break;
+      const pair = digits.slice(i, i + 2);
+      if (pair === CODE) {
+        if (i + 5 > n) break;
+        const code = digits.slice(i + 2, i + 5);
+        out.push(book.has(code) ? book.get(code) : `[${code}]`);
+        i += 5;
+      } else if (pair === FIG) {
+        i += 2;
+        while (i + 1 < n && digits.slice(i, i + 2) !== FIG) {
+          const a = digits[i], b = digits[i + 1];
+          out.push(a === b ? a : "?");
+          i += 2;
+        }
+        i += 2;
+      } else {
+        out.push(has(reverse, pair) ? reverse[pair] : "?");
+        i += 2;
+      }
+    }
+    return out.join("").trim();
+  }
+
+  const add = (p, k) => Array.from(p).map((d, i) => String((+d + +k[i]) % 10)).join("");
+  const subtract = (c, k) => Array.from(c).map((d, i) => String((+d - +k[i] + 10) % 10)).join("");
+  function groupsOf(digits, size = GROUP_SIZE) {
+    const g = [];
+    for (let i = 0; i < digits.length; i += size) g.push(digits.slice(i, i + size));
+    return g;
+  }
+
+  // Uniform digits from the browser's secure random source (rejection sampling).
+  function randomDigits(n, random = (buf) => crypto.getRandomValues(buf)) {
+    let out = "";
+    const buf = new Uint8Array(256);
+    while (out.length < n) {
+      random(buf);
+      for (const b of buf) { if (b < 250 && out.length < n) out += String(b % 10); }
+    }
+    return out;
+  }
+
+  // pad = {name, created, language, group_size, spaces, codebook:[[code,word]], pages:[{id,key}], used:[ids]}
+  function newPad({pages = 20, groupsPerPage = 50, language = "de", codebook = null, groupSize = GROUP_SIZE,
+                   spaces = true, name = "", random} = {}) {
+    if (!(pages >= 1 && pages <= 1000)) throw new OtpError("pages must be between 1 and 1000", "pages_range");
+    if (!(groupsPerPage >= 5 && groupsPerPage <= 1000)) throw new OtpError("groups per page must be between 5 and 1000", "groups_range");
+    table(language);
+    const ids = new Set();
+    while (ids.size < pages) ids.add(randomDigits(groupSize, random));
+    return {
+      name, language, group_size: groupSize, spaces,
+      created: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+      codebook: normalizeCodebook(codebook === null ? (DEFAULT_CODEBOOKS[language] || []) : codebook),
+      pages: Array.from(ids).map(id => ({id, key: randomDigits(groupsPerPage * groupSize, random)})),
+      used: [],
+    };
+  }
+
+  function padToJson(pad) {
+    // Same layout as the Python side; the codebook is an object there.
+    const codebook = {};
+    for (const [c, w] of pad.codebook) codebook[c] = w;
+    return {format: "etherdigits-pad", version: 1, name: pad.name, created: pad.created, language: pad.language,
+            group_size: pad.group_size, spaces: pad.spaces, codebook, pages: pad.pages, used: pad.used};
+  }
+
+  function padFromJson(data) {
+    if (!data || data.format !== "etherdigits-pad") throw new OtpError("not an EtherDigits pad file", "bad_file");
+    if (data.version !== 1) throw new OtpError(`unsupported pad version ${JSON.stringify(data.version)}`, "bad_file");
+    const pages = [];
+    for (const page of data.pages || []) {
+      const id = String(page.id ?? ""), key = String(page.key ?? "");
+      if (!id || !key || !Array.from(id + key).every(isDigit)) throw new OtpError(`broken page in pad file: ${JSON.stringify(id)}`, "bad_file");
+      pages.push({id, key});
+    }
+    if (!pages.length) throw new OtpError("the pad has no pages", "bad_file");
+    // JavaScript reorders numeric object keys anyway; sorting makes the order explicit.
+    const book = Object.entries(data.codebook || {}).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    const pad = {
+      name: data.name || "", created: data.created || "", language: data.language || "de",
+      group_size: parseInt(data.group_size, 10) || GROUP_SIZE, spaces: data.spaces !== false,
+      codebook: normalizeCodebook(book), pages, used: (data.used || []).map(String),
+    };
+    table(pad.language);
+    return pad;
+  }
+
+  const unused = pad => pad.pages.filter(p => !pad.used.includes(p.id)).map(p => p.id);
+  const pageKey = (pad, id) => { const p = pad.pages.find(p => p.id === id); return p ? p.key : null; };
+
+  function prepare(text, pad) {
+    let plain = encode(text, pad.language, pad.codebook, pad.spaces);
+    if (plain) plain += PAD_DIGIT.repeat((pad.group_size - plain.length % pad.group_size) % pad.group_size);
+    return plain;
+  }
+
+  function encrypt(text, pad, pageId = null) {
+    if (pageId === null) {
+      const free = unused(pad);
+      if (!free.length) throw new OtpError("every page of this pad is used; make a new pad", "exhausted");
+      pageId = free[0];
+    }
+    const key = pageKey(pad, pageId);
+    if (key === null) throw new OtpError(`page ${pageId} is not in this pad`, "no_page", {page: pageId});
+    if (pad.used.includes(pageId)) throw new OtpError(`page ${pageId} was already used. A page must never be used twice`, "reuse", {page: pageId});
+    const plain = prepare(text, pad);
+    if (!plain) throw new OtpError("the message is empty", "empty");
+    const size = pad.group_size;
+    if (plain.length > key.length) {
+      throw new OtpError(`the message needs ${plain.length / size} groups, a page has ${Math.floor(key.length / size)}; shorten it`, "too_long", {need: plain.length / size, cap: Math.floor(key.length / size)});
+    }
+    pad.used.push(pageId);
+    return [pageId, ...groupsOf(add(plain, key), size)];
+  }
+
+  function decryptWithKey(cipher, key, lang, codebook) {
+    if (cipher.length > key.length) throw new OtpError("the message is longer than the key page", "longer_than_key");
+    return decode(subtract(cipher, key), lang, codebook);
+  }
+
+  function decrypt(groups, pad, markUsed = true) {
+    const text = Array.isArray(groups) ? groups.join("") : String(groups);
+    const digits = Array.from(text).filter(isDigit).join("");
+    const size = pad.group_size;
+    const pageId = digits.slice(0, size), cipher = digits.slice(size);
+    const key = pageKey(pad, pageId);
+    if (key === null) throw new OtpError(`page ${pageId} is not in this pad`, "no_page", {page: pageId});
+    const plain = decryptWithKey(cipher, key, pad.language, pad.codebook);
+    if (markUsed && !pad.used.includes(pageId)) pad.used.push(pageId);
+    return plain;
+  }
+
+  return {GROUP_SIZE, FIG, CODE, LAYOUTS, SIGNS, DEFAULT_CODEBOOKS, OtpError, normalize, table, normalizeCodebook,
+          parseCodebook, encode, decode, add, subtract, groupsOf, randomDigits, newPad, padToJson, padFromJson,
+          unused, pageKey, prepare, encrypt, decrypt, decryptWithKey};
+})();
+if (typeof module !== "undefined") module.exports = Engine;
+</script>
+
+<script>
+"use strict";
+const T = {
+  de: {
+    subtitle: "Schlüsselhefte, Ver- und Entschlüsseln. Läuft komplett offline, nichts verlässt diesen Rechner.",
+    load: "Heft laden", save: "Heft speichern",
+    no_pad: "Kein Heft geladen. Lade ein Heft oder erzeuge ein neues.",
+    pad_status: "Heft <b>{name}</b>: {free} von {total} Seiten frei · {lang}",
+    unsaved: "nicht gespeichert",
+    tab_pad: "Heft", tab_enc: "Verschlüsseln", tab_dec: "Entschlüsseln", tab_board: "Schachbrett",
+    new_pad: "Neues Heft", new_pad_hint: "Jede Seite verschlüsselt genau eine Nachricht. Die Seitennummern sind zufällig, damit sie nicht verraten, wie viele Nachrichten schon gesendet wurden.",
+    pad_name: "Name (frei wählbar)", pages: "Seiten", groups_per_page: "Gruppen pro Seite",
+    board_lang: "Sprache des Schachbretts", spaces: "Wortabstände mitsenden (lesbarer, aber länger)",
+    codebook: "Codebuch", codebook_hint: "Eine Zeile pro Eintrag: dreistellige Nummer und ein Wort. Ein Codewort kostet 5 Ziffern und lohnt sich für Wörter ab etwa 4 Buchstaben.",
+    create: "Heft erzeugen",
+    replace_confirm: "Das geladene Heft ist nicht gespeichert. Trotzdem ein neues erzeugen?",
+    handover: "Übergabe", handover_1: "Sender und Empfänger brauchen <b>dasselbe</b> Heft. Speichere die Datei und gib dem Empfänger eine Kopie, am besten gedruckt und persönlich, niemals über das Internet.",
+    handover_2: "Eine benutzte Seite wird hier gesperrt. Die Datei merkt sich das nur, wenn du sie danach speicherst.",
+    handover_3: "Auf Papier: Seite nach dem Entschlüsseln vernichten. Wer das Heft findet, kann alle Nachrichten mit den noch vorhandenen Seiten lesen.",
+    print_pad: "Heft drucken", print_board: "Schachbrett und Codebuch drucken",
+    page_list: "Seiten",
+    message: "Nachricht", page_to_use: "Seite", encrypt: "Verschlüsseln",
+    enc_stats: "<b>{chars}</b> Zeichen → <b>{digits}</b> Ziffern → <b>{groups}</b> Gruppen + Kennung · Seite fasst <b>{cap}</b>",
+    too_long: "Zu lang für eine Seite. Kürze die Nachricht oder nutze das Codebuch.",
+    dropped: "Wird weggelassen: {chars}",
+    what_is_sent: "So sieht der Text für das Schachbrett aus",
+    groups_to_send: "Zu sendende Gruppen", copy: "Kopieren", copied: "Kopiert",
+    enc_done: "Seite {page} ist jetzt verbraucht. Speichere das Heft, sonst weiß die Datei nichts davon.",
+    send_hint: "In EtherDigits aussenden:",
+    need_pad: "Erst ein Heft laden oder erzeugen.",
+    received: "Empfangene Gruppen", received_hint: "Die erste Gruppe ist die Seitennummer.",
+    manual_hint: "Kein Heft geladen: Tippe die Schlüsselgruppen der Papierseite ab, ohne die Seitennummer.",
+    manual_key: "Schlüssel von der Seite", decrypt: "Entschlüsseln", plain_text: "Klartext",
+    dec_done: "Seite {page} ist jetzt als gelesen markiert. Vernichte sie auf Papier, und speichere das Heft.",
+    digits_detail: "Ziffern nach dem Abziehen des Schlüssels",
+    board: "Spaltentabelle (Straddling Checkerboard)",
+    board_rule_1: "Die häufigsten Buchstaben stehen oben und haben eine Ziffer. Alle anderen haben zwei: Zeilennummer, dann Spalte. Weil oben 7, 8 und 9 frei sind, weiß man beim Lesen immer, ob eine oder zwei Ziffern folgen.",
+    board_rule_2: "<b>Zahlen</b>: 98, dann jede Ziffer doppelt, dann wieder 98. Beispiel: 1830 → 98 11 88 33 00 98.",
+    board_rule_3: "<b>Codebuch</b>: 99 und die dreistellige Nummer. Beispiel: TREFFEN → 99 119.",
+    board_rule_4: "<b>Auffüllen</b>: Die letzte Gruppe wird mit 9 aufgefüllt. Eine angefangene 9 oder 99 am Ende wird beim Entschlüsseln ignoriert.",
+    try_it: "Ausprobieren",
+    how_it_works: "So funktioniert der Einmalschlüssel",
+    how_1: "1. Der Text wird mit der Tabelle zu Ziffern. Die Tabelle ist nicht geheim, sie macht die Nachricht nur kurz.",
+    how_2: "2. Darunter kommt eine Seite echter Zufallsziffern. Ziffer für Ziffer wird addiert, ohne Übertrag: 7 + 5 = 2.",
+    how_3: "3. Vorne steht die Seitennummer, dann wird in Fünfergruppen gesendet. Der Empfänger zieht dieselbe Seite wieder ab: 2 − 5 = 7.",
+    how_4: "Ohne die Seite ist jeder Text dieser Länge gleich wahrscheinlich. Das gilt aber nur, solange jede Seite <b>nur ein einziges Mal</b> benutzt wird.",
+    print_page: "Seite {n} von {total}", destroy: "Nach Gebrauch vernichten. Nicht kopieren, nicht fotografieren.",
+    remembered: "Dieser Browser kennt {n} verbrauchte Seite(n), die in der Datei fehlten. Sie wurden gesperrt. Speichere das Heft.",
+    leave: "Das Heft hat ungespeicherte Änderungen.",
+    lang_de: "Deutsch", lang_en: "Englisch",
+    space: "Abst.", fig: "Zahl", code: "Code",
+    err_lang: "Unbekannte Sprache für das Schachbrett.", err_cb_code: "Codebuch: „{code}“ ist keine dreistellige Nummer.",
+    err_cb_word: "Codebuch: Eintrag {code} muss genau ein Wort sein.", err_cb_dup: "Codebuch: {word} steht zweimal drin.",
+    err_cb_line: "Codebuch, Zeile {line}: erwartet wird „Nummer Wort“.", err_pages_range: "Seiten: 1 bis 1000.",
+    err_groups_range: "Gruppen pro Seite: 5 bis 1000.", err_bad_file: "Das ist keine gültige EtherDigits-Heftdatei.",
+    err_exhausted: "Alle Seiten dieses Hefts sind verbraucht. Erzeuge ein neues Heft.", err_no_page: "Seite {page} gibt es in diesem Heft nicht.",
+    err_reuse: "Seite {page} wurde schon benutzt. Eine Seite darf nie zweimal verwendet werden.", err_empty: "Die Nachricht ist leer.",
+    err_too_long: "Die Nachricht braucht {need} Gruppen, eine Seite hat {cap}. Bitte kürzen.", err_longer_than_key: "Die Nachricht ist länger als die Schlüsselseite.",
+    err_no_key: "Tippe zuerst den Schlüssel von der Papierseite ab.",
+  },
+  en: {
+    subtitle: "Key pads, encryption and decryption. Runs completely offline, nothing leaves this computer.",
+    load: "Load pad", save: "Save pad",
+    no_pad: "No pad loaded. Load a pad or create a new one.",
+    pad_status: "Pad <b>{name}</b>: {free} of {total} pages unused · {lang}",
+    unsaved: "not saved",
+    tab_pad: "Pad", tab_enc: "Encrypt", tab_dec: "Decrypt", tab_board: "Checkerboard",
+    new_pad: "New pad", new_pad_hint: "Each page encrypts exactly one message. Page numbers are random, so they do not reveal how many messages were sent.",
+    pad_name: "Name (anything you like)", pages: "Pages", groups_per_page: "Groups per page",
+    board_lang: "Checkerboard language", spaces: "Send spaces between words (easier to read, but longer)",
+    codebook: "Codebook", codebook_hint: "One line per entry: a three-digit number and one word. A code word costs 5 digits and pays off for words of about 4 letters or more.",
+    create: "Create pad",
+    replace_confirm: "The loaded pad is not saved. Create a new one anyway?",
+    handover: "Handing over", handover_1: "Sender and receiver need <b>the same</b> pad. Save the file and give the receiver a copy, ideally printed and in person, never over the internet.",
+    handover_2: "A used page is locked here. The file only remembers that if you save it afterwards.",
+    handover_3: "On paper: destroy the page after decrypting. Whoever finds the pad can read every message sent with the pages still in it.",
+    print_pad: "Print pad", print_board: "Print checkerboard and codebook",
+    page_list: "Pages",
+    message: "Message", page_to_use: "Page", encrypt: "Encrypt",
+    enc_stats: "<b>{chars}</b> characters → <b>{digits}</b> digits → <b>{groups}</b> groups + indicator · a page holds <b>{cap}</b>",
+    too_long: "Too long for one page. Shorten the message or use the codebook.",
+    dropped: "Left out: {chars}",
+    what_is_sent: "The text as the checkerboard sees it",
+    groups_to_send: "Groups to send", copy: "Copy", copied: "Copied",
+    enc_done: "Page {page} is now used up. Save the pad, or the file will not know.",
+    send_hint: "Send it with EtherDigits:",
+    need_pad: "Load or create a pad first.",
+    received: "Received groups", received_hint: "The first group is the page number.",
+    manual_hint: "No pad loaded: type the key groups from the paper page, without the page number.",
+    manual_key: "Key from the page", decrypt: "Decrypt", plain_text: "Plain text",
+    dec_done: "Page {page} is now marked as read. Destroy it on paper, and save the pad.",
+    digits_detail: "Digits after taking off the key",
+    board: "Straddling checkerboard",
+    board_rule_1: "The most frequent letters sit in the top row and take one digit. All others take two: row, then column. Because 7, 8 and 9 are empty at the top, a reader always knows whether one or two digits follow.",
+    board_rule_2: "<b>Numbers</b>: 98, then every digit twice, then 98 again. Example: 1830 → 98 11 88 33 00 98.",
+    board_rule_3: "<b>Codebook</b>: 99 and the three-digit number. Example: MEET → 99 119.",
+    board_rule_4: "<b>Padding</b>: the last group is filled with 9s. An unfinished 9 or 99 at the end is ignored when decrypting.",
+    try_it: "Try it",
+    how_it_works: "How the one-time pad works",
+    how_1: "1. The checkerboard turns the text into digits. It is not secret, it only keeps the message short.",
+    how_2: "2. A page of truly random digits goes underneath. Digit by digit they are added without carry: 7 + 5 = 2.",
+    how_3: "3. The page number goes in front, then everything is sent in groups of five. The receiver takes the same page off again: 2 − 5 = 7.",
+    how_4: "Without the page every text of that length is equally likely. That holds only as long as every page is used <b>exactly once</b>.",
+    print_page: "Page {n} of {total}", destroy: "Destroy after use. Do not copy, do not photograph.",
+    remembered: "This browser knows {n} used page(s) the file did not. They are locked now. Save the pad.",
+    leave: "The pad has unsaved changes.",
+    lang_de: "German", lang_en: "English",
+    space: "space", fig: "fig", code: "code",
+    err_lang: "Unknown checkerboard language.", err_cb_code: "Codebook: “{code}” is not a three-digit number.",
+    err_cb_word: "Codebook: entry {code} must be exactly one word.", err_cb_dup: "Codebook: {word} appears twice.",
+    err_cb_line: "Codebook, line {line}: expected “number word”.", err_pages_range: "Pages: 1 to 1000.",
+    err_groups_range: "Groups per page: 5 to 1000.", err_bad_file: "This is not a valid EtherDigits pad file.",
+    err_exhausted: "Every page of this pad is used. Create a new pad.", err_no_page: "Page {page} is not in this pad.",
+    err_reuse: "Page {page} was already used. A page must never be used twice.", err_empty: "The message is empty.",
+    err_too_long: "The message needs {need} groups, a page has {cap}. Please shorten it.", err_longer_than_key: "The message is longer than the key page.",
+    err_no_key: "Type the key from the paper page first.",
+  },
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+let lang = "en";
+let pad = null, dirty = false, lastCipher = null, statusNote = null;
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage may be blocked */ } },
+};
+
+const errText = err => (err && err.code && T.en["err_" + err.code]) ? t("err_" + err.code, err.vars) : String(err && err.message || err);
+
+function t(key, vars = {}) {
+  let s = (T[lang] && T[lang][key]) ?? T.en[key] ?? key;
+  for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, v);
+  return s;
+}
+
+function setLang(l) {
+  lang = T[l] ? l : "en";
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.innerHTML = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  store.set("etherdigits.lang", lang);
+  refresh();
+}
+
+// --- pad state -------------------------------------------------------------
+
+const padKey = p => "etherdigits.used." + p.created + "." + p.pages[0].id;
+
+function rememberUsed() { if (pad) store.set(padKey(pad), pad.used); }
+
+function setPad(p, isDirty) {
+  pad = p;
+  dirty = isDirty;
+  const known = store.get(padKey(pad)) || [];
+  const missing = known.filter(id => !pad.used.includes(id) && pad.pages.some(pg => pg.id === id));
+  statusNote = null;
+  if (missing.length) {
+    pad.used.push(...missing);
+    dirty = true;
+    statusNote = {key: "remembered", vars: {n: missing.length}, cls: "warn"};
+  }
+  rememberUsed();
+  $("boardLang").value = pad.language;
+  $("decLang").value = pad.language;
+  lastCipher = null;
+  $("encOut").textContent = ""; $("encDone").textContent = ""; $("encCmd").textContent = "";
+  refresh();
+}
+
+function markDirty() { dirty = true; rememberUsed(); refresh(); }
+
+function alertNote(id, text) { $(id).textContent = text; }
+
+function refresh() {
+  const info = $("statusInfo");
+  const status = $("status");
+  status.classList.toggle("dirty", dirty);
+  $("saveBtn").disabled = !pad;
+  $("saveBtn").classList.toggle("warn", dirty);
+  $("printPadBtn").disabled = !pad;
+  if (!pad) {
+    info.innerHTML = esc(t("no_pad"));
+  } else {
+    const free = Engine.unused(pad).length;
+    info.innerHTML = t("pad_status", {name: esc(pad.name || pad.created), free, total: pad.pages.length,
+      lang: esc(t("lang_" + pad.language))}) + (dirty ? ` <span class="pill warn">${esc(t("unsaved"))}</span>` : "");
+  }
+  if (statusNote) {
+    const text = statusNote.key ? t(statusNote.key, statusNote.vars) : statusNote.text;
+    info.insertAdjacentHTML("beforeend", `<div class="note ${statusNote.cls}">${esc(text)}</div>`);
+  }
+  // page list
+  const list = $("pageList");
+  list.innerHTML = "";
+  $("pageListEmpty").hidden = !!pad;
+  if (pad) {
+    const next = Engine.unused(pad)[0];
+    for (const p of pad.pages) {
+      const span = document.createElement("span");
+      span.textContent = p.id;
+      if (pad.used.includes(p.id)) span.className = "used";
+      else if (p.id === next) span.className = "next";
+      list.appendChild(span);
+    }
+  }
+  // encrypt page select
+  const sel = $("encPage");
+  const keep = sel.value;
+  sel.innerHTML = "";
+  if (pad) for (const id of Engine.unused(pad)) sel.add(new Option(id, id));
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  $("encBtn").disabled = !pad || !sel.options.length;
+  $("manualKey").hidden = !!pad;
+  updateEncStats();
+  renderBoard();
+}
+
+// --- file load and save ----------------------------------------------------
+
+$("loadBtn").addEventListener("click", () => {
+  if (dirty && !confirm(t("replace_confirm"))) return;
+  $("fileInput").click();
+});
+$("fileInput").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    setPad(Engine.padFromJson(JSON.parse(await file.text())), false);
+  } catch (err) {
+    statusNote = {text: `${file.name}: ${err instanceof SyntaxError ? t("err_bad_file") : errText(err)}`, cls: "bad"};
+    refresh();
+  }
+});
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], {type: "application/json"}));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$("saveBtn").addEventListener("click", () => {
+  if (!pad) return;
+  const base = (pad.name || "pad").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "pad";
+  download(`${base}-${pad.created.slice(0, 10)}.json`, JSON.stringify(Engine.padToJson(pad), null, 1) + "\n");
+  dirty = false;
+  refresh();
+});
+
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = t("leave"); } });
+
+// --- new pad ---------------------------------------------------------------
+
+let codebookEdited = false;
+function fillDefaultCodebook() {
+  const l = $("padLang").value;
+  $("padCodebook").value = Engine.DEFAULT_CODEBOOKS[l].map(([c, w]) => `${c} ${w}`).join("\n");
+}
+$("padCodebook").addEventListener("input", () => { codebookEdited = true; });
+$("padLang").addEventListener("change", () => { if (!codebookEdited) fillDefaultCodebook(); });
+
+$("newPadBtn").addEventListener("click", () => {
+  alertNote("newPadMsg", "");
+  if (dirty && !confirm(t("replace_confirm"))) return;
+  try {
+    const codebook = Engine.parseCodebook($("padCodebook").value);
+    const p = Engine.newPad({
+      pages: parseInt($("padPages").value, 10), groupsPerPage: parseInt($("padGroups").value, 10),
+      language: $("padLang").value, codebook, spaces: $("padSpaces").checked, name: $("padName").value.trim(),
+    });
+    setPad(p, true);
+  } catch (err) {
+    alertNote("newPadMsg", errText(err));
+  }
+});
+
+// --- encrypt ---------------------------------------------------------------
+
+function updateEncStats() {
+  const text = $("encText").value;
+  if (!pad || !text.trim()) {
+    $("encStats").innerHTML = pad ? "" : esc(t("need_pad"));
+    $("encDropped").textContent = ""; $("encPreview").textContent = "";
+    return;
+  }
+  try {
+    const [norm, dropped] = Engine.normalize(text);
+    const plain = Engine.prepare(text, pad);
+    const groups = plain.length / pad.group_size;
+    const cap = Math.floor(pad.pages[0].key.length / pad.group_size);
+    $("encStats").innerHTML = "<span>" + t("enc_stats", {chars: norm.length, digits: Engine.encode(text, pad.language, pad.codebook, pad.spaces).length, groups, cap})
+      + (groups > cap ? `<span style="color:var(--danger)"> · ${esc(t("too_long"))}</span>` : "") + "</span>";
+    $("encDropped").textContent = dropped.length ? t("dropped", {chars: dropped.map(c => c === " " ? "␣" : c).join(" ")}) : "";
+    $("encPreview").textContent = pad.spaces ? norm : norm.replace(/ /g, "");
+  } catch (err) {
+    $("encStats").textContent = errText(err);
+  }
+}
+$("encText").addEventListener("input", updateEncStats);
+
+function formatGroups(groups) {
+  const lines = [];
+  for (let i = 0; i < groups.length; i += 5) lines.push(groups.slice(i, i + 5));
+  return lines.map((line, n) => line.map((g, j) => n === 0 && j === 0 ? `<span class="ind">${g}</span>` : g).join(" ")).join("\n");
+}
+
+$("encBtn").addEventListener("click", () => {
+  alertNote("encMsg", "");
+  if (!pad) { alertNote("encMsg", t("need_pad")); return; }
+  try {
+    const groups = Engine.encrypt($("encText").value, pad, $("encPage").value || null);
+    lastCipher = groups;
+    $("encOut").innerHTML = formatGroups(groups);
+    $("encCopy").disabled = false;
+    $("encDone").textContent = t("enc_done", {page: groups[0]});
+    $("encCmd").textContent = `python -m etherdigits render -m "${groups.join(" ")}" -o tx.wav`;
+    markDirty();
+  } catch (err) {
+    alertNote("encMsg", errText(err));
+  }
+});
+
+$("encCopy").addEventListener("click", async () => {
+  if (!lastCipher) return;
+  try {
+    await navigator.clipboard.writeText(lastCipher.join(" "));
+  } catch {
+    const r = document.createRange(); r.selectNodeContents($("encOut"));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand("copy");
+  }
+  $("encCopy").textContent = t("copied");
+  setTimeout(() => { $("encCopy").textContent = t("copy"); }, 1500);
+});
+
+// --- decrypt ---------------------------------------------------------------
+
+$("decBtn").addEventListener("click", () => {
+  alertNote("decMsg", ""); $("decDone").textContent = "";
+  try {
+    const raw = $("decText").value;
+    const digits = Array.from(raw).filter(c => c >= "0" && c <= "9").join("");
+    let text, plainDigits;
+    if (pad) {
+      const size = pad.group_size, pageId = digits.slice(0, size);
+      const key = Engine.pageKey(pad, pageId);
+      if (key === null) throw new Engine.OtpError(`page ${pageId} is not in this pad`, "no_page", {page: pageId});
+      plainDigits = Engine.subtract(digits.slice(size), key);
+      const wasUsed = pad.used.includes(pageId);
+      text = Engine.decrypt(digits, pad);
+      if (!wasUsed) { $("decDone").textContent = t("dec_done", {page: pageId}); markDirty(); }
+    } else {
+      const key = Array.from($("decKey").value).filter(c => c >= "0" && c <= "9").join("");
+      const l = $("decLang").value;
+      const cipher = digits.slice(Engine.GROUP_SIZE);
+      if (!key) throw new Engine.OtpError("no key", "no_key");
+      plainDigits = Engine.subtract(cipher, key);
+      text = Engine.decryptWithKey(cipher, key, l, Engine.DEFAULT_CODEBOOKS[l]);
+    }
+    $("decOut").textContent = text;
+    $("decDigits").textContent = Engine.groupsOf(plainDigits).join(" ");
+  } catch (err) {
+    alertNote("decMsg", errText(err));
+  }
+});
+
+// --- checkerboard ----------------------------------------------------------
+
+function boardTable(l) {
+  const layout = Engine.LAYOUTS[l];
+  const signs = {};
+  for (const [s, c] of Object.entries(Engine.SIGNS)) signs[c] = s;
+  const cell = (s, cls = "") => `<td${cls ? ` class="${cls}"` : ""}>${esc(s)}</td>`;
+  let html = `<table class="board"><tr><th></th>${[...Array(10).keys()].map(i => `<th>${i}</th>`).join("")}</tr>`;
+  html += `<tr><th></th>${[...layout.top.padEnd(10, " ")].map(c => cell(c)).join("")}</tr>`;
+  for (const row of ["7", "8"]) html += `<tr><th>${row}</th>${[...layout[row]].map(c => cell(c)).join("")}</tr>`;
+  html += `<tr><th>9</th>`;
+  for (let i = 0; i < 10; i++) {
+    const code = "9" + i, s = signs[code];
+    if (s === " ") html += cell(t("space"), "sp");
+    else if (s) html += cell(s);
+    else html += cell(code === Engine.FIG ? t("fig") : t("code"), "sp");
+  }
+  return html + "</tr></table>";
+}
+
+function codebookList(book) {
+  return book.map(([c, w]) => `<li><b>${c}</b>${esc(w)}</li>`).join("");
+}
+
+function currentBoardBook() {
+  const l = $("boardLang").value;
+  return pad && pad.language === l ? pad.codebook : Engine.normalizeCodebook(Engine.DEFAULT_CODEBOOKS[l]);
+}
+
+function renderBoard() {
+  const l = $("boardLang").value;
+  $("boardTable").innerHTML = boardTable(l);
+  $("boardCodebook").innerHTML = codebookList(currentBoardBook());
+  const text = $("tryText").value;
+  if (!text) { $("tryOut").textContent = ""; return; }
+  try {
+    const digits = Engine.encode(text, l, currentBoardBook(), pad ? pad.spaces : true);
+    $("tryOut").textContent = digits.replace(/(\d{5})/g, "$1 ").trim() + `   (${digits.length})`;
+  } catch (err) { $("tryOut").textContent = errText(err); }
+}
+$("boardLang").addEventListener("change", renderBoard);
+$("tryText").addEventListener("input", renderBoard);
+
+// --- printing --------------------------------------------------------------
+
+function printPad() {
+  if (!pad) return;
+  const total = pad.pages.length;
+  $("print").innerHTML = pad.pages.map((p, n) => {
+    const groups = Engine.groupsOf(p.key, pad.group_size);
+    let rows = "";
+    for (let i = 0; i < groups.length; i += 5) {
+      rows += `<tr><td class="n">${i + 1}</td>${groups.slice(i, i + 5).map(g => `<td>${g}</td>`).join("")}</tr>`;
+    }
+    return `<div class="sheet"><header><div class="pid">${p.id}</div><div class="meta">EtherDigits · ${esc(pad.name || "")}<br>${esc(t("print_page", {n: n + 1, total}))} · ${esc(pad.created)}</div></header>
+      <table>${rows}</table><footer>${esc(t("destroy"))}</footer></div>`;
+  }).join("");
+  window.print();
+}
+
+function printBoard() {
+  const l = pad ? pad.language : $("boardLang").value;
+  const book = pad ? pad.codebook : Engine.normalizeCodebook(Engine.DEFAULT_CODEBOOKS[l]);
+  $("print").innerHTML = `<div class="sheet"><header><div class="pid" style="font-size:20px">${esc(t("board"))}</div>
+    <div class="meta">EtherDigits · ${esc(t("lang_" + l))}${pad ? " · " + esc(pad.name || pad.created) : ""}</div></header>
+    ${boardTable(l)}<p>${t("board_rule_2")}</p><p>${t("board_rule_3")}</p><p>${t("board_rule_4")}</p>
+    <h3>${esc(t("codebook"))}</h3><ul class="codebook">${codebookList(book)}</ul></div>`;
+  window.print();
+}
+$("printPadBtn").addEventListener("click", printPad);
+$("printBoardBtn").addEventListener("click", printBoard);
+
+// --- tabs and start --------------------------------------------------------
+
+function showTab(name) {
+  document.querySelectorAll("[role=tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll("[role=tabpanel]").forEach(s => { s.hidden = s.id !== "tab-" + name; });
+}
+document.querySelectorAll("[role=tab]").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+fillDefaultCodebook();
+showTab("pad");
+setLang(store.get("etherdigits.lang") || ((navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en"));
+</script>
+</body>
+</html>

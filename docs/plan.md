@@ -46,15 +46,17 @@ card, a radio or an internet stream.
 - [x] Command line: `voices`, `render`
 - [x] Tests
 
-### 2. Offline tool
+### 2. Offline tool (done in 0.2)
 
-- [ ] One self-contained HTML file, works without network
-- [ ] Pad generator using the browser's secure random source, printable pads
-      (one page per message, page number as indicator group)
-- [ ] Straddling checkerboard (German and English layouts) and a small codebook
-- [ ] Encode and decode, addition without carry (mod 10)
-- [ ] Used-page register that refuses to use a page twice
-- [ ] The same logic in Python (`etherdigits.otp`), tested against the HTML tool
+- [x] One self-contained HTML file (`pad_tool.html`), no network access
+- [x] Pad generator using the secure random source, printable pads
+      (one page per message, random page id as indicator group)
+- [x] Straddling checkerboard (German and English layouts), editable codebook
+- [x] Encode and decode, addition without carry (mod 10)
+- [x] Used pages are refused; the browser also remembers them in case an old
+      pad file is loaded again
+- [x] The same logic in Python (`etherdigits.otp`, CLI `pad`, `encrypt`,
+      `decrypt`, `checkerboard`), tested against the HTML tool
 
 ### 3. Service
 
