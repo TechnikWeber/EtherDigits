@@ -77,6 +77,18 @@ const T = {
     frequency: "Frequenz (kHz, 0 = nicht ändern)", frequency_hint: "Wird nur gesetzt, wenn CAT in den Einstellungen an ist.", rig_mode: "Betriebsart", rig_mode_keep: "nicht ändern",
     cw_ident: "Morse-Kennung am Schluss", cw_wpm: "Tempo (WpM)",
     st_blocked: "gesperrt", st_stopped: "abgebrochen",
+    code: "Code aus der Authenticator-App", tab_practice: "Übung", transcript: "Transkript",
+    totp: "Zwei-Faktor-Anmeldung (TOTP)", totp_on: "An: Zum Anmelden braucht es Passwort und Code.", totp_off: "Aus.", totp_needs_pw: "Setze zuerst ein Passwort.",
+    totp_setup: "Einrichten", totp_scan: "Trage diesen Schlüssel in deine Authenticator-App ein (z. B. Aegis, Google Authenticator: „Schlüssel eingeben“) und bestätige mit dem ersten Code:",
+    totp_enable: "Einschalten", totp_disable: "Ausschalten", totp_enabled: "Zwei-Faktor-Anmeldung ist an.", totp_disabled: "Zwei-Faktor-Anmeldung ist aus.",
+    ntp_server: "Zeitserver", ntp_hint: "Die Station vergleicht ihre Uhr stündlich und plant nach der richtigen Zeit. Leer lassen schaltet das ab.",
+    clock_ok: "Uhr: {offset} s Abweichung zu {server}", clock_bad: "Die Systemuhr geht {offset} s falsch. Die Station richtet sich nach dem Zeitserver {server}; stell die Systemuhr trotzdem richtig.",
+    clock_err: "Uhr nicht geprüft: {error}",
+    stream: "Internet-Stream (Icecast)", stream_hint: "Die Station sendet rund um die Uhr als Internetradio, zwischen den Sendungen Stille. Braucht ffmpeg und einen Icecast-Server.",
+    stream_host: "Icecast-Server", stream_mount: "Mountpoint", stream_bitrate: "kbit/s", stream_user: "Benutzer", stream_password: "Quell-Passwort", stream_password_set: "gespeichert, leer lassen zum Behalten",
+    stream_name: "Name des Senders", stream_on: "Stream läuft seit {since} UTC.", stream_wait: "Stream verbindet …", stream_err: "Stream: {error}",
+    practice: "Hörübung", practice_hint: "Zufallsgruppen zum Mitschreiben, wie beim Empfang. Nichts davon wird gesendet.",
+    practice_new: "Neue Übung", practice_copy: "Mitschrift", practice_check: "Prüfen", practice_score: "{ok} von {total} Gruppen richtig", practice_wrong_digits: "{n} falsche Ziffern",
   },
   en: {
     logout: "Log out", login: "Log in", password: "Password",
@@ -153,6 +165,18 @@ const T = {
     frequency: "Frequency (kHz, 0 = leave it)", frequency_hint: "Only set when CAT is switched on in the settings.", rig_mode: "Mode", rig_mode_keep: "leave it",
     cw_ident: "Morse identification at the end", cw_wpm: "Speed (wpm)",
     st_blocked: "locked", st_stopped: "stopped",
+    code: "Code from the authenticator app", tab_practice: "Practice", transcript: "Transcript",
+    totp: "Two-factor login (TOTP)", totp_on: "On: logging in takes the password and a code.", totp_off: "Off.", totp_needs_pw: "Set a password first.",
+    totp_setup: "Set up", totp_scan: "Enter this key in your authenticator app (e.g. Aegis, Google Authenticator: “enter a setup key”) and confirm with the first code:",
+    totp_enable: "Switch on", totp_disable: "Switch off", totp_enabled: "Two-factor login is on.", totp_disabled: "Two-factor login is off.",
+    ntp_server: "Time server", ntp_hint: "The station compares its clock every hour and schedules by the right time. Leave it empty to switch this off.",
+    clock_ok: "Clock: {offset} s off {server}", clock_bad: "The system clock is {offset} s off. The station follows the time server {server}; set the system clock right anyway.",
+    clock_err: "Clock not checked: {error}",
+    stream: "Internet stream (Icecast)", stream_hint: "The station streams around the clock as internet radio, with silence between transmissions. Needs ffmpeg and an Icecast server.",
+    stream_host: "Icecast server", stream_mount: "Mount point", stream_bitrate: "kbit/s", stream_user: "User", stream_password: "Source password", stream_password_set: "stored, leave empty to keep it",
+    stream_name: "Station name", stream_on: "Streaming since {since} UTC.", stream_wait: "Stream connecting …", stream_err: "Stream: {error}",
+    practice: "Listening practice", practice_hint: "Random groups to copy by ear, like on reception. None of it is transmitted.",
+    practice_new: "New exercise", practice_copy: "Your copy", practice_check: "Check", practice_score: "{ok} of {total} groups right", practice_wrong_digits: "{n} wrong digits",
   },
 };
 
@@ -170,6 +194,10 @@ const SERVER_ERRORS = {
     "a pad with this name is already on the station": "Ein Heft mit diesem Namen liegt schon auf der Station.",
     "this schedule sends nothing when the queue is empty": "Dieser Zeitplan sendet nichts, solange die Warteschlange leer ist.",
     "the transmitter is locked (emergency stop)": "Der Sender ist gesperrt (Notaus).",
+    "code required": "Bitte den Code aus der Authenticator-App eingeben.",
+    "wrong code": "Falscher Code.",
+    "set a password first": "Setze zuerst ein Passwort.",
+    "start the setup first": "Erst einrichten.",
   },
 };
 const $ = id => document.getElementById(id);
@@ -250,8 +278,10 @@ function setLang(l) {
 }
 
 // ---------------------------------------------------------------- session
-function showLogin() {
+async function showLogin() {
   $("login").hidden = false; $("app").hidden = true; $("logoutBtn").hidden = true;
+  try { state.session = await (await fetch("/api/session")).json(); } catch { /* offline */ }
+  $("loginCodeBox").hidden = !state.session?.totp;
   $("loginPassword").focus();
 }
 
@@ -272,10 +302,13 @@ $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
   note("loginMsg", "");
   try {
-    await api("POST", "/api/login", {password: $("loginPassword").value});
-    $("loginPassword").value = "";
+    await api("POST", "/api/login", {password: $("loginPassword").value, code: $("loginCode").value});
+    $("loginPassword").value = ""; $("loginCode").value = "";
     await startApp();
-  } catch (err) { note("loginMsg", err.message, "bad"); }
+  } catch (err) {
+    if (err.message === SERVER_ERRORS[lang]?.["code required"] || err.message === "code required") $("loginCodeBox").hidden = false;
+    note("loginMsg", err.message, "bad");
+  }
 });
 
 $("logoutBtn").addEventListener("click", async () => { await api("POST", "/api/logout", {}); showLogin(); });
@@ -299,6 +332,7 @@ async function refreshTab() {
     if (state.tab === "messages") { await Promise.all([loadMessages(), loadPads()]); renderMsgForm(); }
     if (state.tab === "schedules") { await loadSchedules(); }
     if (state.tab === "log") { await loadLog(); }
+    if (state.tab === "practice") { fillPracticeSelects(); }
     if (state.tab === "settings") { await Promise.all([loadSettings(), loadTokens(), loadPads(), loadOutput()]); renderSettings(); renderOutput(); }
   } catch (err) { if (err.status !== 401) console.warn(err); }
 }
@@ -309,6 +343,8 @@ function renderAll() { renderStatus(); renderSchedules(); fillStaticSelects(); r
 function renderBanner() {
   const parts = [];
   if (state.status?.blocked) parts.push(`<div class="note bad">${esc(t("blocked_banner"))}</div>`);
+  const c = state.status?.clock;
+  if (c && c.offset != null && Math.abs(c.offset) > c.warn_seconds) parts.push(`<div class="note warn">${esc(t("clock_bad", {offset: c.offset.toFixed(1), server: c.server}))}</div>`);
   if (state.session && !state.session.password_set) parts.push(`<div class="note warn">${esc(t("no_password_local"))}</div>`);
   $("banner").innerHTML = parts.join("");
 }
@@ -349,6 +385,13 @@ function renderStatus() {
     : `<h3>${esc(t("idle"))}</h3>`;
   $("outputNote").textContent = (s.output === "silent" ? t("out_silent") : t("out_soundcard")) + (s.monitor ? " " + t("out_monitor") : "");
   $("queueCount").textContent = s.queue;
+  const c = s.clock || {};
+  const off = c.offset != null ? (c.offset >= 0 ? "+" : "") + c.offset.toLocaleString(lang, {maximumFractionDigits: 3}) : "";
+  $("clockNote").textContent = c.offset != null ? t(Math.abs(c.offset) > c.warn_seconds ? "clock_bad" : "clock_ok", {offset: off, server: c.server})
+    : (c.error && c.error !== "off" ? t("clock_err", {error: c.error}) : "");
+  const st = s.stream || {};
+  $("streamNote").textContent = !st.enabled ? "" : st.connected ? t("stream_on", {since: utc(st.since, false)})
+    : st.error ? t("stream_err", {error: st.error}) : t("stream_wait");
   $("stopBig").hidden = s.blocked;
   $("releaseBtn").hidden = !s.blocked;
   renderBanner();
@@ -625,7 +668,7 @@ function logTable(entries, full) {
       <td>${e.kind ? esc(t("kind_" + e.kind)) : "–"}${e.message_ids ? ` <span class="muted">#${esc(e.message_ids.split(" ").join(", #"))}</span>` : ""}</td>
       <td class="mono">${e.duration ? Math.round(e.duration) + " s" : ""}</td>
       <td><span class="pill ${e.status}">${esc(t("st_" + e.status))}</span>${e.error ? `<div class="muted">${esc(e.error)}</div>` : ""}</td>
-      ${full ? `<td>${e.transcript ? `<details><summary>${esc(t("format"))}</summary><div class="out">${esc(e.transcript)}</div></details>` : ""}
+      ${full ? `<td>${e.transcript ? `<details><summary>${esc(t("transcript"))}</summary><div class="out">${esc(e.transcript)}</div></details>` : ""}
         ${e.recording ? `<details data-rec="${e.id}"><summary>${esc(t("recording"))}</summary></details>` : ""}</td>` : ""}
     </tr>`).join("") + "</table></div>";
 }
@@ -645,7 +688,8 @@ async function loadPads() { state.pads = await api("GET", "/api/pads"); }
 function renderSettings() {
   const s = state.settings;
   $("setDiscreet").checked = s.discreet; $("setKeep").value = s.keep_recordings_days;
-  $("setLead").value = s.lead_seconds; $("setStationEnc").checked = s.station_encryption;
+  $("setLead").value = s.lead_seconds; $("setStationEnc").checked = s.station_encryption; $("setNtp").value = s.ntp_server;
+  renderTotp();
   $("pwHint").textContent = state.session.password_set ? t("pw_hint_set") : t("pw_hint_none");
   $("pwCurrentBox").hidden = !state.session.password_set;
   $("padList").innerHTML = state.pads.length
@@ -664,7 +708,7 @@ $("setForm").addEventListener("submit", async e => {
   try {
     state.settings = await api("PUT", "/api/settings", {
       discreet: $("setDiscreet").checked, keep_recordings_days: +$("setKeep").value,
-      lead_seconds: +$("setLead").value, station_encryption: $("setStationEnc").checked,
+      lead_seconds: +$("setLead").value, station_encryption: $("setStationEnc").checked, ntp_server: $("setNtp").value.trim(),
     });
     note("setMsg", t("saved"), "good");
   } catch (err) { note("setMsg", err.message, "bad"); }
@@ -681,6 +725,40 @@ $("pwForm").addEventListener("submit", async e => {
     $("banner").innerHTML = ""; $("logoutBtn").hidden = false;
     renderSettings();
   } catch (err) { note("pwMsg", err.message, "bad"); }
+});
+
+function renderTotp() {
+  const on = state.session.totp, pw = state.session.password_set;
+  $("totpState").textContent = !pw ? t("totp_needs_pw") : on ? t("totp_on") : t("totp_off");
+  $("totpSetupBox").hidden = on || !pw;
+  $("totpOffBox").hidden = !on;
+  if (on) $("totpPendingBox").hidden = true;
+}
+$("totpSetup").addEventListener("click", async () => {
+  note("totpMsg", "");
+  try {
+    const r = await api("POST", "/api/totp/setup", {password: $("totpPassword").value});
+    $("totpPassword").value = "";
+    $("totpSecret").textContent = r.secret.match(/.{1,4}/g).join(" ");
+    $("totpUri").textContent = r.uri;
+    $("totpPendingBox").hidden = false; $("totpCode").focus();
+  } catch (err) { note("totpMsg", err.message, "bad"); }
+});
+$("totpEnable").addEventListener("click", async () => {
+  try {
+    await api("POST", "/api/totp/enable", {code: $("totpCode").value});
+    $("totpCode").value = ""; $("totpPendingBox").hidden = true;
+    state.session = await api("GET", "/api/session");
+    note("totpMsg", t("totp_enabled"), "good"); renderTotp();
+  } catch (err) { note("totpMsg", err.message, "bad"); }
+});
+$("totpDisable").addEventListener("click", async () => {
+  try {
+    await api("POST", "/api/totp/disable", {password: $("totpOffPassword").value, code: $("totpOffCode").value});
+    $("totpOffPassword").value = ""; $("totpOffCode").value = "";
+    state.session = await api("GET", "/api/session");
+    note("totpMsg", t("totp_disabled"), "good"); renderTotp();
+  } catch (err) { note("totpMsg", err.message, "bad"); }
 });
 
 async function loadTokens() {
@@ -720,6 +798,52 @@ $("padFile").addEventListener("change", async e => {
   } catch (err) { note("padMsg", err.message, "bad"); }
 });
 
+// ---------------------------------------------------------------- practice
+let practiceGroups = null, practiceUrl = null;
+
+function fillPracticeSelects() {
+  if (!state.voices || $("pVoice").options.length) return;
+  $("pVoice").innerHTML = state.voices.voices.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  $("pEffect").innerHTML = state.voices.effects.map(e => `<option value="${e}">${esc(t("effect_" + e))}</option>`).join("");
+}
+
+$("pNew").addEventListener("click", async () => {
+  note("pMsg", t("rendering"));
+  $("pResult").innerHTML = ""; $("pAnswer").value = "";
+  try {
+    const res = await api("POST", "/api/practice", {voice: $("pVoice").value, effect: $("pEffect").value,
+      groups: +$("pGroups").value, group_gap: +$("pGap").value, group_twice: $("pTwice").checked}, true);
+    practiceGroups = (res.headers.get("X-Groups") || "").split(" ");
+    if (practiceUrl) URL.revokeObjectURL(practiceUrl);
+    practiceUrl = URL.createObjectURL(await res.blob());
+    $("pAudio").src = practiceUrl; $("pAudio").hidden = false;
+    $("pAudio").play().catch(() => {});
+    $("pCheck").disabled = false; note("pMsg", "");
+    $("pAnswer").focus();
+  } catch (err) { note("pMsg", err.message, "bad"); }
+});
+
+$("pCheck").addEventListener("click", () => {
+  if (!practiceGroups) return;
+  // Groups written with spaces are compared one by one, so a missed digit costs only its own group.
+  const words = $("pAnswer").value.trim().split(/[\s,;/-]+/).map(w => w.replace(/[^0-9]/g, "")).filter(Boolean);
+  const typed = words.join("");
+  const heard = words.length > 1 ? words
+    : Array.from({length: practiceGroups.length}, (_, i) => typed.slice(i * 5, i * 5 + 5));
+  let ok = 0, wrongDigits = 0;
+  const rows = practiceGroups.map((g, i) => {
+    const mine = heard[i] || "";
+    const marked = [...g].map((d, j) => {
+      const good = mine[j] === d;
+      if (!good) wrongDigits++;
+      return `<span style="color:var(${good ? "--green" : "--danger"})">${esc(mine[j] ?? "·")}</span>`;
+    }).join("");
+    if (mine === g) ok++;
+    return `<div>${marked} <span class="muted">${mine === g ? "✓" : esc(g)}</span></div>`;
+  });
+  $("pResult").innerHTML = `<p><b>${esc(t("practice_score", {ok, total: practiceGroups.length}))}</b> · ${esc(t("practice_wrong_digits", {n: wrongDigits}))}</p><div class="out" style="font-size:16px">${rows.join("")}</div>`;
+});
+
 // ---------------------------------------------------------------- output and radio
 async function loadOutput() {
   [state.output, state.devices] = await Promise.all([api("GET", "/api/output"), api("GET", "/api/output/devices")]);
@@ -742,6 +866,10 @@ function renderOutput() {
   $("oPtt").value = o.ptt; $("oSerialPort").value = o.serial_port; $("oSerialLine").value = o.serial_line;
   $("oInvert").checked = o.serial_invert; $("oLead").value = o.ptt_lead_ms; $("oTail").value = o.ptt_tail_ms;
   $("oCat").checked = o.cat; $("oRigHost").value = o.rig_host; $("oRigPort").value = o.rig_port; $("oMax").value = o.max_tx_seconds;
+  $("oStream").checked = o.stream; $("oStreamHost").value = o.stream_host; $("oStreamPort").value = o.stream_port;
+  $("oStreamMount").value = o.stream_mount; $("oStreamBitrate").value = String(o.stream_bitrate); $("oStreamUser").value = o.stream_user;
+  $("oStreamName").value = o.stream_name; $("oStreamPassword").value = "";
+  $("oStreamPassword").placeholder = o.stream_password_set ? t("stream_password_set") : "";
   $("oSerialPorts").innerHTML = state.devices.serial_ports.map(p => `<option value="${esc(p.device)}">${esc(p.description)}</option>`).join("");
   if (state.devices.error) note("outMsg", state.devices.error, "warn");
   outputVisibility();
@@ -753,8 +881,9 @@ function outputVisibility() {
   $("oMonitorBox").hidden = !$("oMonitor").checked;
   $("oSerialBox").hidden = $("oPtt").value !== "serial"; $("oInvertBox").hidden = $("oPtt").value !== "serial";
   $("oCatBox").hidden = !$("oCat").checked;
+  $("oStreamBox").hidden = !$("oStream").checked;
 }
-["oMode", "oMonitor", "oPtt", "oCat"].forEach(id => $(id).addEventListener("change", outputVisibility));
+["oMode", "oMonitor", "oPtt", "oCat", "oStream"].forEach(id => $(id).addEventListener("change", outputVisibility));
 
 function outputData() {
   return {
@@ -764,6 +893,9 @@ function outputData() {
     serial_invert: $("oInvert").checked, ptt_lead_ms: +$("oLead").value, ptt_tail_ms: +$("oTail").value,
     cat: $("oCat").checked, rig_host: $("oRigHost").value.trim(), rig_port: +$("oRigPort").value,
     max_tx_seconds: +$("oMax").value,
+    stream: $("oStream").checked, stream_host: $("oStreamHost").value.trim(), stream_port: +$("oStreamPort").value,
+    stream_mount: $("oStreamMount").value.trim(), stream_bitrate: +$("oStreamBitrate").value, stream_user: $("oStreamUser").value.trim(),
+    stream_password: $("oStreamPassword").value, stream_name: $("oStreamName").value.trim(),
   };
 }
 

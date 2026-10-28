@@ -26,12 +26,14 @@ from urllib.parse import quote
 from aiohttp import web
 
 from . import __version__, otp
-from .auth import Sessions, Throttle, check_new_password, hash_password, verify_password
+from .auth import (Sessions, Throttle, check_new_password, hash_password, new_totp_secret, totp_uri, verify_password,
+                   verify_totp)
 from .groups import GroupError
 from .radio import RIG_MODES, RadioError, Rig, list_devices, serial_ports, validate_output
-from .render import EFFECTS, MELODIES, write_wav
+from .groups import random_groups
+from .render import EFFECTS, MELODIES, render, write_wav
 from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso
-from .script import INTERVALS, Format
+from .script import INTERVALS, Format, Transmission, build_script
 from .station import Station
 from .store import PRIORITIES, Store, StoreError
 from .voicepack import VoicePackError, find_pack, list_packs
@@ -40,7 +42,7 @@ log = logging.getLogger("etherdigits.server")
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 COOKIE = "ed_session"
-PUBLIC = {"/api/session", "/api/login"}
+PUBLIC = {"/api/session", "/api/login", "/api/health"}
 PAD_NAME = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 STATION = web.AppKey("station", Station)
 STORE = web.AppKey("store", Store)
@@ -140,7 +142,21 @@ def int_arg(request: web.Request, name: str = "id") -> int:
 
 async def get_session(request: web.Request) -> web.Response:
     return web.json_response({"logged_in": logged_in(request), "password_set": password_set(request),
+                              "totp": bool(request.app[STORE].get("totp_secret")),
                               "local": is_local(request), "version": __version__})
+
+
+async def get_health(request: web.Request) -> web.Response:
+    """For monitoring tools: 200 when the scheduler runs and the clock is fine, otherwise 503.
+    Says nothing about traffic."""
+    station = request.app[STATION]
+    tick = station.last_tick
+    loop_ok = tick is not None and (station.clock() - tick).total_seconds() < 10
+    offset = station.clock_status.get("offset")
+    clock_ok = offset is None or abs(offset) <= 2
+    ok = loop_ok and clock_ok
+    return web.json_response({"ok": ok, "scheduler": loop_ok, "clock": clock_ok, "version": __version__},
+                             status=200 if ok else 503)
 
 
 async def post_login(request: web.Request) -> web.Response:
@@ -156,6 +172,16 @@ async def post_login(request: web.Request) -> web.Response:
     if not ok:
         throttle.fail(who)
         raise ApiError(401, "wrong password")
+    store = request.app[STORE]
+    secret = store.get("totp_secret")
+    if secret:
+        if not data.get("code"):
+            raise ApiError(401, "code required")
+        counter = verify_totp(secret, str(data["code"]), last_counter=int(store.get("totp_last") or -1))
+        if counter is None:
+            throttle.fail(who)
+            raise ApiError(401, "wrong code")
+        store.set("totp_last", counter)
     throttle.reset(who)
     response = web.json_response({"ok": True})
     response.set_cookie(COOKIE, request.app[SESSIONS].create(), httponly=True, samesite="Strict",
@@ -187,6 +213,47 @@ async def post_password(request: web.Request) -> web.Response:
     response.set_cookie(COOKIE, sessions.create(), httponly=True, samesite="Strict", secure=request.secure,
                         max_age=12 * 3600)
     return response
+
+
+async def post_totp_setup(request: web.Request) -> web.Response:
+    store = request.app[STORE]
+    stored = store.get("admin_password")
+    if not stored:
+        raise ApiError(400, "set a password first")
+    data = await body(request)
+    if not await asyncio.to_thread(verify_password, str(data.get("password", "")), stored):
+        raise ApiError(401, "the current password is wrong")
+    secret = new_totp_secret()
+    store.set("totp_pending", secret)
+    return web.json_response({"secret": secret, "uri": totp_uri(secret)})
+
+
+async def post_totp_enable(request: web.Request) -> web.Response:
+    store = request.app[STORE]
+    pending = store.get("totp_pending")
+    if not pending:
+        raise ApiError(400, "start the setup first")
+    counter = verify_totp(pending, str((await body(request)).get("code", "")))
+    if counter is None:
+        raise ApiError(400, "wrong code")
+    store.set("totp_secret", pending)
+    store.set("totp_last", counter)
+    store.set("totp_pending", "")
+    return web.json_response({"ok": True})
+
+
+async def post_totp_disable(request: web.Request) -> web.Response:
+    store = request.app[STORE]
+    data = await body(request)
+    secret = store.get("totp_secret")
+    if not secret:
+        return web.json_response({"ok": True})
+    if not await asyncio.to_thread(verify_password, str(data.get("password", "")), store.get("admin_password")):
+        raise ApiError(401, "the current password is wrong")
+    if verify_totp(secret, str(data.get("code", "")), last_counter=int(store.get("totp_last") or -1)) is None:
+        raise ApiError(400, "wrong code")
+    store.set("totp_secret", "")
+    return web.json_response({"ok": True})
 
 
 # --- station -------------------------------------------------------------------
@@ -268,6 +335,36 @@ async def post_preview(request: web.Request) -> web.Response:
     # Long filler transcripts are cut before encoding, so the header always decodes.
     return web.Response(body=await asyncio.to_thread(to_wav), content_type="audio/wav",
                         headers={"X-Transcript": quote(planned.text()[:3000]), "X-Kind": planned.kind})
+
+
+async def post_practice(request: web.Request) -> web.Response:
+    """Random groups to copy by ear, for receivers in training. Nothing is sent or logged."""
+    data = await body(request)
+    try:
+        count = int(data.get("groups", 5))
+        pause = float(data.get("group_gap", 1.5))
+    except (TypeError, ValueError):
+        raise ApiError(400, "groups and group_gap must be numbers")
+    if not 1 <= count <= 50 or not 0.3 <= pause <= 10:
+        raise ApiError(400, "1 to 50 groups, pauses of 0.3 to 10 s")
+    effect = str(data.get("effect", "none"))
+    if effect not in EFFECTS:
+        raise ApiError(400, "unknown effect")
+    pack = find_pack(str(data.get("voice", "de")))
+    groups = random_groups(count)
+    fmt = Format(interval="none", callsign_repeats=0, announce_group_count=False, message_repeats=1,
+                 end_tone=False, group_gap=pause, group_twice=bool(data.get("group_twice")))
+    steps = build_script(Transmission([groups], fmt))
+    station = request.app[STATION]
+    audio = await asyncio.to_thread(render, steps, pack, station.rate, effect)
+
+    def to_wav() -> bytes:
+        buf = io.BytesIO()
+        write_wav(buf, audio, station.rate)
+        return buf.getvalue()
+
+    return web.Response(body=await asyncio.to_thread(to_wav), content_type="audio/wav",
+                        headers={"X-Groups": " ".join(groups)})
 
 
 async def post_transmit(request: web.Request) -> web.Response:
@@ -456,15 +553,27 @@ def output_config(store: Store) -> dict:
     return validate_output({}, store.get("output") or {})
 
 
+def public_output(cfg: dict) -> dict:
+    """The output settings for the browser: the stream password never leaves the station."""
+    out = dict(cfg)
+    out["stream_password_set"] = bool(out.pop("stream_password"))
+    return out
+
+
 async def get_output(request: web.Request) -> web.Response:
-    return web.json_response(output_config(request.app[STORE]))
+    return web.json_response(public_output(output_config(request.app[STORE])))
 
 
 async def put_output(request: web.Request) -> web.Response:
     store = request.app[STORE]
-    cfg = validate_output(await body(request), output_config(store))
+    changes = await body(request)
+    changes.pop("stream_password_set", None)
+    if not changes.get("stream_password"):
+        changes.pop("stream_password", None)  # empty field: keep the stored password
+    cfg = validate_output(changes, output_config(store))
     store.set("output", cfg)
-    return web.json_response(cfg)
+    await asyncio.to_thread(request.app[STATION].reconfigure)
+    return web.json_response(public_output(cfg))
 
 
 async def get_devices(_request: web.Request) -> web.Response:
@@ -538,6 +647,10 @@ def make_app(store: Store, station: Station, data_dir: Path, run_station: bool =
     r.add_post("/api/login", post_login)
     r.add_post("/api/logout", post_logout)
     r.add_post("/api/password", post_password)
+    r.add_get("/api/health", get_health)
+    r.add_post("/api/totp/setup", post_totp_setup)
+    r.add_post("/api/totp/enable", post_totp_enable)
+    r.add_post("/api/totp/disable", post_totp_disable)
     r.add_get("/api/status", get_status)
     r.add_get("/api/voices", get_voices)
     r.add_get("/api/schedules", get_schedules)
@@ -547,6 +660,7 @@ def make_app(store: Store, station: Station, data_dir: Path, run_station: bool =
     r.add_delete("/api/schedules/{id}", delete_schedule)
     r.add_post("/api/schedules/{id}/preview", post_preview)
     r.add_post("/api/schedules/{id}/transmit", post_transmit)
+    r.add_post("/api/practice", post_practice)
     r.add_get("/api/messages", get_messages)
     r.add_post("/api/messages", post_message)
     r.add_post("/api/messages/{id}/cancel", post_cancel)

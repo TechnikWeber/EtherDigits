@@ -18,3 +18,11 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m unittest -v
       - run: node --check web/app.js
+      - run: bash -n install.sh
+      - name: Check install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors; exit 1 }

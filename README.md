@@ -21,36 +21,66 @@ REPEAT 21347 47890 11203
 END
 ```
 
-> Version 0.4: voices, transmission format, the one-time pad tool, the station
-> service with queue, schedules, web interface and API, and radio output with
-> sound card, monitor, level meter, PTT and CAT. Not yet tested with a real
-> radio; see [docs/plan.md](docs/plan.md).
+![The station's web interface: on air with the level meter, next transmissions, queue](docs/screenshots/overview.jpg)
+
+| | |
+|---|---|
+| ![Messages: hand in digit groups, the queue with priority and expiry](docs/screenshots/messages.jpg) | ![Schedule editor: every 3 minutes, voice, frequency and mode for CAT](docs/screenshots/schedule.jpg) |
+| ![Log with transcript and recording of every transmission](docs/screenshots/log.jpg) | ![Settings: sound card, monitor on the station computer, PTT, CAT](docs/screenshots/settings.jpg) |
+| ![Listening practice: random groups to copy by ear, checked group by group](docs/screenshots/practice.jpg) | ![The offline pad tool: a message on the left, the groups to send on the right](docs/screenshots/pad-tool.jpg) |
+
+> Version 0.5: everything in the [plan](docs/plan.md) is built except PTT over
+> the GPIO pins of a Raspberry Pi. The radio output (sound card, PTT, CAT) has
+> not been tried with a real radio yet.
 
 ## Install
 
-Python 3.10 or newer.
+**Linux and macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/TechnikWeber/EtherDigits/main/install.sh | bash
+```
+
+**Windows** (PowerShell, needs Python 3.10+ from python.org or `winget install Python.Python.3.12`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/TechnikWeber/EtherDigits/main/install.ps1 | iex"
+```
+
+Both install EtherDigits for your user, start it in the background at every
+login, and restart it when it stops. Then open <http://127.0.0.1:8472/>. Run the
+installer again to update; your data stays. The Linux/macOS installer asks for
+your password once to install PortAudio and ffmpeg (sound card, MP3 and stream);
+`--no-system-packages`, `--no-service` and `--with-hamlib` (CAT) change that,
+appended after `bash -s --`.
+
+**Packaged program:** the [releases](https://github.com/TechnikWeber/EtherDigits/releases)
+carry a single program file for Windows, macOS (Apple silicon) and Linux. Start
+it with a double click; it opens the web interface. These files are not signed,
+so Windows SmartScreen and macOS Gatekeeper ask once whether to run them. On
+Linux the sound card needs PortAudio from the system (`libportaudio2`, `portaudio`).
+
+**By hand**, with Python 3.10 or newer:
 
 ```sh
 git clone https://github.com/TechnikWeber/EtherDigits.git
 cd EtherDigits
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt      # Windows: .venv\Scripts\pip
+.venv/bin/python -m etherdigits serve
 ```
 
-For MP3 output, install `ffmpeg` or `lame`. WAV works without either. Sound
-card output uses PortAudio, which comes with `sounddevice` on Windows and
-macOS; on Linux install it with the system (`sudo dnf install portaudio`,
-`sudo apt install libportaudio2`). For CAT, install Hamlib.
-
-## Use
+## Make audio files
 
 ```sh
-python -m etherdigits voices                                   # list voices
-python -m etherdigits render -m "21347 47890 11203" -o tx.wav  # German, default voice
-python -m etherdigits render --voice en --random 10 --effect radio -o tx.mp3
-python -m etherdigits render -o null.wav                       # "no message"
-python -m etherdigits render -m "21347 47890"                  # transcript only
+etherdigits voices                                   # list voices
+etherdigits render -m "21347 47890 11203" -o tx.wav  # German, default voice
+etherdigits render --voice en --random 10 --effect radio -o tx.mp3
+etherdigits render -o null.wav                       # "no message"
+etherdigits render -m "21347 47890"                  # transcript only
 ```
+
+(`etherdigits` is what the installer sets up; by hand it is `python -m etherdigits`.)
 
 | Option | What it does |
 |---|---|
@@ -65,27 +95,21 @@ python -m etherdigits render -m "21347 47890"                  # transcript only
 | `--effect radio` | narrow band, a little drive and noise, like AM on shortwave |
 | `--format-file` | all format settings from JSON, see [examples/format.json](examples/format.json) |
 
-## Run the station
+## The station
 
-```sh
-python -m etherdigits serve
-```
-
-Then open <http://127.0.0.1:8472/>. The station transmits on its schedules
-around the clock, fills quiet slots with random groups, logs every
-transmission and keeps recordings for a week. Out of the box it has no radio
-output: transmissions run in real time without sound. Set up the output under
-Settings.
-
-![The station's web interface: on air with the level meter, next transmissions, queue](docs/station.jpg)
+The station transmits on its schedules around the clock, fills quiet slots with
+random groups, logs every transmission and keeps recordings for a week. Out of
+the box it has no radio output: transmissions run in real time without sound.
+Set up the output under Settings.
 
 | Tab | What it does |
 |---|---|
-| Overview | on air or ready, the next transmissions in UTC and local time, the queue |
+| Overview | on air or ready with a live level meter, the next transmissions in UTC and local time, the queue, emergency stop |
 | Messages | hand in digit groups: priority, number of transmissions, schedule, not before, expiry, delete after sending |
-| Schedules | fixed UTC times on chosen weekdays, or every N minutes; voice, callsign, filler, the whole transmission layout; listen to a preview, transmit now |
+| Schedules | fixed UTC times on chosen weekdays, or every N minutes; voice, callsign, frequency, filler, the whole transmission layout; listen to a preview, transmit now |
 | Log | every transmission with its transcript and recording |
-| Settings | admin password, discreet log, API tokens, pads for encrypting on the station |
+| Practice | random groups to copy by ear, checked group by group |
+| Settings | password and two-factor login, discreet log, time server, output and radio, internet stream, API tokens, pads |
 
 **Output and radio** (Settings → Output and radio):
 
@@ -95,6 +119,7 @@ Settings.
 | Monitor | plays the same transmission on a second device of the station computer, e.g. its speakers, to hear what goes out. Off by default |
 | PTT | VOX (the radio keys itself), a serial line (RTS/DTR, e.g. Digirig), or CAT; with lead and tail time |
 | CAT | sets frequency and mode per schedule through Hamlib's `rigctld` |
+| Internet stream | the station as an Icecast source, around the clock, silence between transmissions |
 | Transmit limit | no transmission runs longer; too long ones are refused before going on air |
 
 The level meter in the header and on the overview shows live whether the
@@ -114,19 +139,32 @@ rigctld -m 3073 -r /dev/ttyUSB0      # model 3073 = Icom IC-7300; list models wi
 exactly like a message, says "no message", or stays silent. Only the first
 hides when there is traffic.
 
+**Running unattended.** `etherdigits service install` starts the station at
+login (systemd user service on Linux, launchd agent on macOS, Startup folder on
+Windows) and restarts it when it stops; `service status` and `service
+uninstall` do what they say. On Linux, `loginctl enable-linger $USER` keeps it
+running when nobody is logged in. The station compares its clock with a time
+server every hour and schedules by the right time, warning when the system
+clock is more than two seconds off. `/api/health` answers 200 while the
+scheduler runs and the clock is right, 503 otherwise, for monitoring tools.
+
 **Access.** Without a password only the computer the station runs on can open
-the interface. To reach it from elsewhere, set a password and listen on all
-addresses; best behind a VPN such as WireGuard or Tailscale:
+the interface. To reach it from elsewhere, set a password, optionally switch on
+two-factor login (any TOTP authenticator app), and listen on all addresses;
+best behind a VPN such as WireGuard or Tailscale:
 
 ```sh
-python -m etherdigits password
-python -m etherdigits serve --host 0.0.0.0
+etherdigits password
+etherdigits service install --host 0.0.0.0
 ```
+
+Lost the authenticator? `etherdigits totp-off` on the station switches
+two-factor login off again.
 
 **Submitting remotely.** An API token can hand in messages and do nothing else:
 
 ```sh
-python -m etherdigits token add "Agent North"
+etherdigits token add "Agent North"
 curl -X POST http://station:8472/api/submit \
   -H "Authorization: Bearer ed_..." -H "Content-Type: application/json" \
   -d '{"groups": "48213 07460 14476", "priority": 1, "transmissions": 2, "expires_minutes": 1440}'
@@ -163,12 +201,10 @@ holds keys.
 
 ## The pad tool
 
-`pad_tool.html` is a single file that runs in any browser, offline. It makes
+`pad_tool.html` is a single file that runs in any browser, offline (picture above). It makes
 pads of key pages, encrypts, decrypts and prints pads and the checkerboard for
 pencil-and-paper use. It never touches the network and refuses to use a page
 twice.
-
-![The pad tool: a message on the left, the digit groups to send on the right](docs/pad-tool.jpg)
 
 The same works from the command line, compatible with the browser tool:
 
@@ -222,6 +258,10 @@ Node.js and checks that it agrees with `etherdigits/otp.py` digit for digit.
 
 New voice packs are built from Piper models with `scripts/build_voicepack.py`
 (needs `pip install piper-tts`).
+
+The packaged programs are built by `.github/workflows/release.yml` with
+PyInstaller (`pyinstaller packaging/etherdigits.spec`) whenever a version tag is
+pushed.
 
 ## License
 

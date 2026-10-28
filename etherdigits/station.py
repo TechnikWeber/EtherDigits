@@ -19,8 +19,10 @@ from pathlib import Path
 
 import numpy as np
 
+from .clock import WARN_SECONDS, ClockError, sntp_offset
 from .groups import random_groups
 from .radio import Meter, Rig, Transmitter
+from .stream import StreamSink
 from .render import DEFAULT_RATE, render, tone, write_wav
 from .schedule import Schedule, iso, utcnow
 from .script import Transmission, build_script, transcript
@@ -53,11 +55,17 @@ class Planned:
 
 
 class Station:
-    def __init__(self, store: Store, data_dir: Path, output=None, clock=utcnow, rate: int = DEFAULT_RATE):
+    def __init__(self, store: Store, data_dir: Path, output=None, clock=None, rate: int = DEFAULT_RATE):
         self.store = store
         self.data_dir = Path(data_dir)
         self.fixed_output = output  # tests pass one; otherwise it comes from the settings
-        self.clock = clock
+        self.clock_offset = 0.0     # seconds the system clock is behind the time server
+        self.clock_status: dict = {"checked": None, "offset": None, "server": "", "error": ""}
+        self.clock = clock or self.corrected_now
+        self.last_tick: datetime | None = None
+        self.stream = StreamSink(rate)
+        self._last_clock_check: datetime | None = None
+        self._clock_task: asyncio.Task | None = None
         self.meter = Meter()
         self._stop = threading.Event()
         self.rate = rate
@@ -143,6 +151,7 @@ class Station:
                 self.current = {"schedule": schedule.name, "schedule_id": schedule.id, "started": iso(started),
                                 "duration": round(seconds, 1)}
                 self._stop.clear()
+                self.stream.push(audio)
                 result = await tx.play(audio, self.rate, self.meter, self._stop)
                 if result.stopped:
                     # Not fully sent: the messages stay in the queue.
@@ -220,6 +229,28 @@ class Station:
 
     # --- the scheduler loop --------------------------------------------------
 
+    def corrected_now(self) -> datetime:
+        return utcnow() + timedelta(seconds=self.clock_offset)
+
+    def check_clock(self) -> dict:
+        """Ask the time server (blocking; run it in a thread)."""
+        server = str(self.store.get("ntp_server") or "")
+        status = {"checked": iso(utcnow()), "offset": None, "server": server, "error": ""}
+        if not server:
+            status["error"] = "off"
+        else:
+            try:
+                offset = sntp_offset(server)
+                status["offset"] = round(offset, 3)
+                if abs(offset) < 86400:  # a day off is a broken answer, not a clock to follow
+                    self.clock_offset = offset
+            except ClockError as exc:
+                status["error"] = str(exc)
+        self.clock_status = status
+        if status["offset"] is not None and abs(status["offset"]) > WARN_SECONDS:
+            log.warning("system clock is %.1f s off; the station uses the time server's time", status["offset"])
+        return status
+
     def replan(self, now: datetime) -> None:
         self.next_runs = {s.id: s.next_run(now) for s in self.store.schedules()}
         self._version = self.store.version
@@ -243,6 +274,12 @@ class Station:
         if self._last_housekeeping is None or now - self._last_housekeeping >= timedelta(minutes=1):
             self._last_housekeeping = now
             self.housekeeping(now)
+        if self.clock == self.corrected_now and (self._last_clock_check is None
+                                                 or now - self._last_clock_check >= timedelta(hours=1)):
+            self._last_clock_check = now
+            if self._clock_task is None or self._clock_task.done():
+                self._clock_task = asyncio.create_task(asyncio.to_thread(self.check_clock))
+        self.last_tick = now
         return started
 
     def spawn(self, coro) -> asyncio.Task:
@@ -264,8 +301,14 @@ class Station:
             except OSError:
                 log.warning("could not remove old recording %s", path)
 
+    def reconfigure(self) -> None:
+        """Apply changed output settings to the long-running parts (the stream)."""
+        if self.fixed_output is None:
+            self.stream.configure(self.transmitter().cfg)
+
     async def run(self) -> None:
         log.info("station running")
+        self.reconfigure()
         self.replan(self.clock())
         while not self._stopping:
             try:
@@ -277,6 +320,7 @@ class Station:
     async def stop(self) -> None:
         self._stopping = True
         self._stop.set()
+        await asyncio.to_thread(self.stream.close)
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -293,5 +337,7 @@ class Station:
             "output": self.output.name,
             "monitor": bool(self.output.cfg["monitor"]),
             "blocked": bool(self.store.get("tx_blocked")),
+            "clock": dict(self.clock_status, warn_seconds=WARN_SECONDS),
+            "stream": dict(self.stream.state),
             "discreet": discreet,
         }

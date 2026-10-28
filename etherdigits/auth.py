@@ -92,3 +92,40 @@ class Throttle:
 
     def reset(self, who: str) -> None:
         self._fails.pop(who, None)
+
+
+# --- TOTP (RFC 6238), the six-digit codes of authenticator apps -------------------
+
+TOTP_STEP = 30
+
+
+def new_totp_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def totp(secret: str, counter: int, digits: int = 6) -> str:
+    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+    return str(value % 10 ** digits).zfill(digits)
+
+
+def verify_totp(secret: str, code: str, now: float | None = None, last_counter: int = -1) -> int | None:
+    """The matching time step (one step of clock drift allowed), or None.
+
+    Steps at or before `last_counter` are refused, so a code cannot be used twice.
+    """
+    code = "".join(c for c in str(code) if c.isdigit())
+    if len(code) != 6:
+        return None
+    current = int((time.time() if now is None else now) // TOTP_STEP)
+    for counter in (current - 1, current, current + 1):
+        if counter > last_counter and hmac.compare_digest(totp(secret, counter), code):
+            return counter
+    return None
+
+
+def totp_uri(secret: str, account: str = "admin", issuer: str = "EtherDigits") -> str:
+    from urllib.parse import quote
+    return f"otpauth://totp/{quote(issuer)}:{quote(account)}?secret={secret}&issuer={quote(issuer)}&digits=6&period=30"

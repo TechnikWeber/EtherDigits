@@ -55,6 +55,14 @@ OUTPUT_DEFAULTS: dict = {
     "ptt_lead_ms": 300,        # key the radio this long before the audio
     "ptt_tail_ms": 200,        # and release it this long after
     "max_tx_seconds": 900,     # never transmit longer than this
+    "stream": False,           # Icecast internet stream, around the clock (see stream.py)
+    "stream_host": "",
+    "stream_port": 8000,
+    "stream_mount": "/etherdigits.mp3",
+    "stream_user": "source",
+    "stream_password": "",
+    "stream_bitrate": 64,
+    "stream_name": "EtherDigits",
 }
 
 
@@ -96,6 +104,10 @@ def validate_output(changes: dict, current: dict | None = None) -> dict:
         (10 <= cfg["max_tx_seconds"] <= 7200, "transmit limit: 10 to 7200 seconds"),
         (cfg["ptt"] != "serial" or cfg["serial_port"], "serial PTT needs a serial port"),
         (cfg["ptt"] != "cat" or cfg["cat"], "PTT via CAT needs CAT switched on"),
+        (1 <= cfg["stream_port"] <= 65535, "stream port must be between 1 and 65535"),
+        (cfg["stream_mount"].startswith("/") and " " not in cfg["stream_mount"], "the mount point starts with /, e.g. /etherdigits.mp3"),
+        (cfg["stream_bitrate"] in (32, 48, 64, 96, 128), "stream bit rate: 32, 48, 64, 96 or 128 kbit/s"),
+        (not cfg["stream"] or (cfg["stream_host"] and cfg["stream_password"]), "the stream needs a server and a source password"),
     ]
     for ok, message in checks:
         if not ok:

@@ -28,6 +28,8 @@
     <h2 data-i18n="login"></h2>
     <label for="loginPassword" data-i18n="password"></label>
     <input type="password" id="loginPassword" autocomplete="current-password" required>
+    <div id="loginCodeBox" hidden><label for="loginCode" data-i18n="code"></label>
+      <input type="text" id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
     <div class="actions"><button class="btn primary" type="submit" data-i18n="login"></button></div>
     <div class="note bad" id="loginMsg"></div>
   </form>
@@ -39,6 +41,7 @@
     <button role="tab" data-tab="messages" data-i18n="tab_messages"></button>
     <button role="tab" data-tab="schedules" data-i18n="tab_schedules"></button>
     <button role="tab" data-tab="log" data-i18n="tab_log"></button>
+    <button role="tab" data-tab="practice" data-i18n="tab_practice"></button>
     <button role="tab" data-tab="settings" data-i18n="tab_settings"></button>
   </nav>
 
@@ -51,6 +54,8 @@
         <div class="meter big" id="meterBig" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Level"><div class="fill"></div><div class="peak"></div></div>
         <div class="scale"><span style="left:0">-60</span><span style="left:33.3%">-40</span><span style="left:66.7%">-20</span><span style="left:100%">0 dB</span></div>
         <p class="muted" id="outputNote"></p>
+        <p class="muted" id="clockNote"></p>
+        <p class="muted" id="streamNote"></p>
         <div class="actions">
           <button class="btn stop" id="stopBig" data-i18n="emergency_stop"></button>
           <button class="btn" id="releaseBtn" hidden data-i18n="release"></button>
@@ -137,6 +142,34 @@
     <div class="card"><div id="logList"></div></div>
   </section>
 
+  <!-- PRACTICE -->
+  <section role="tabpanel" id="tab-practice" hidden>
+    <div class="grid two">
+      <div class="card">
+        <h2 data-i18n="practice"></h2>
+        <p class="muted" data-i18n="practice_hint"></p>
+        <div class="row">
+          <div><label for="pVoice" data-i18n="voice"></label><select id="pVoice"></select></div>
+          <div><label for="pEffect" data-i18n="effect"></label><select id="pEffect"></select></div>
+        </div>
+        <div class="row">
+          <div><label for="pGroups" data-i18n="col_groups"></label><input type="number" id="pGroups" min="1" max="50" value="5"></div>
+          <div><label for="pGap" data-i18n="group_gap"></label><input type="number" id="pGap" min="0.3" max="10" step="0.1" value="1.5"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="pTwice"> <span data-i18n="group_twice"></span></label>
+        <div class="actions"><button class="btn primary" id="pNew" data-i18n="practice_new"></button></div>
+        <audio id="pAudio" controls hidden></audio>
+        <div class="note" id="pMsg"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="practice_copy"></h2>
+        <textarea id="pAnswer" rows="5" spellcheck="false" placeholder="12345 67890"></textarea>
+        <div class="actions"><button class="btn" id="pCheck" data-i18n="practice_check" disabled></button></div>
+        <div id="pResult"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section role="tabpanel" id="tab-settings" hidden>
     <div class="grid two">
@@ -150,6 +183,29 @@
           <div class="actions"><button class="btn primary" type="submit" data-i18n="save"></button></div>
           <div class="note" id="pwMsg"></div>
         </form>
+        <div class="card" style="margin-top:16px" id="totpCard">
+          <h2 data-i18n="totp"></h2>
+          <p class="muted" id="totpState"></p>
+          <div id="totpSetupBox">
+            <label for="totpPassword" data-i18n="pw_current"></label><input type="password" id="totpPassword" autocomplete="current-password">
+            <div class="actions"><button class="btn" id="totpSetup" data-i18n="totp_setup"></button></div>
+          </div>
+          <div id="totpPendingBox" hidden>
+            <p data-i18n="totp_scan"></p>
+            <div class="out" id="totpSecret" style="font-size:16px;letter-spacing:.08em"></div>
+            <details><summary>otpauth://</summary><div class="out" id="totpUri"></div></details>
+            <label for="totpCode" data-i18n="code"></label><input type="text" id="totpCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+            <div class="actions"><button class="btn primary" id="totpEnable" data-i18n="totp_enable"></button></div>
+          </div>
+          <div id="totpOffBox" hidden>
+            <div class="row">
+              <div><label for="totpOffPassword" data-i18n="pw_current"></label><input type="password" id="totpOffPassword" autocomplete="current-password"></div>
+              <div><label for="totpOffCode" data-i18n="code"></label><input type="text" id="totpOffCode" inputmode="numeric" maxlength="6"></div>
+            </div>
+            <div class="actions"><button class="btn danger" id="totpDisable" data-i18n="totp_disable"></button></div>
+          </div>
+          <div class="note" id="totpMsg"></div>
+        </div>
         <form class="card" id="setForm" style="margin-top:16px">
           <h2 data-i18n="station_settings"></h2>
           <label class="check"><input type="checkbox" id="setDiscreet"> <span data-i18n="discreet"></span></label>
@@ -158,6 +214,8 @@
             <div><label for="setKeep" data-i18n="keep_days"></label><input type="number" id="setKeep" min="0" max="3650"></div>
             <div><label for="setLead" data-i18n="lead"></label><input type="number" id="setLead" min="5" max="300"></div>
           </div>
+          <label for="setNtp" data-i18n="ntp_server"></label><input type="text" id="setNtp" maxlength="100" placeholder="pool.ntp.org">
+          <p class="muted" data-i18n="ntp_hint"></p>
           <label class="check" style="margin-top:12px"><input type="checkbox" id="setStationEnc"> <span data-i18n="station_enc"></span></label>
           <p class="muted" data-i18n="station_enc_hint"></p>
           <div class="actions"><button class="btn primary" type="submit" data-i18n="save"></button></div>
@@ -199,6 +257,23 @@
               <div style="flex:2"><label for="oRigHost" data-i18n="rig_host"></label><input type="text" id="oRigHost"></div>
               <div><label for="oRigPort" data-i18n="rig_port"></label><input type="number" id="oRigPort" min="1" max="65535"></div>
             </div>
+          </div>
+          <label class="check" style="margin-top:14px"><input type="checkbox" id="oStream"> <span data-i18n="stream"></span></label>
+          <p class="muted" data-i18n="stream_hint"></p>
+          <div id="oStreamBox">
+            <div class="row">
+              <div style="flex:3"><label for="oStreamHost" data-i18n="stream_host"></label><input type="text" id="oStreamHost" placeholder="icecast.example.org"></div>
+              <div><label for="oStreamPort" data-i18n="rig_port"></label><input type="number" id="oStreamPort" min="1" max="65535"></div>
+            </div>
+            <div class="row">
+              <div><label for="oStreamMount" data-i18n="stream_mount"></label><input type="text" id="oStreamMount"></div>
+              <div><label for="oStreamBitrate" data-i18n="stream_bitrate"></label><select id="oStreamBitrate"><option>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></div>
+            </div>
+            <div class="row">
+              <div><label for="oStreamUser" data-i18n="stream_user"></label><input type="text" id="oStreamUser"></div>
+              <div><label for="oStreamPassword" data-i18n="stream_password"></label><input type="password" id="oStreamPassword" autocomplete="new-password"></div>
+            </div>
+            <label for="oStreamName" data-i18n="stream_name"></label><input type="text" id="oStreamName" maxlength="60">
           </div>
           <label for="oMax" data-i18n="max_tx"></label>
           <input type="number" id="oMax" min="10" max="7200" style="max-width:160px">

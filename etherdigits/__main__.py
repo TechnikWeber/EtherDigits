@@ -184,6 +184,33 @@ def cmd_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_service(args: argparse.Namespace) -> int:
+    from . import service
+
+    if args.service_command == "install":
+        from .server import is_loopback_host
+        store, _ = _store(args)
+        if not is_loopback_host(args.host) and not store.get("admin_password"):
+            raise RuntimeError(f"listening on {args.host} needs an admin password first: etherdigits password")
+        print(service.install(args.host, args.port, args.data))
+        print(f"web interface: http://{'127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}/")
+    elif args.service_command == "uninstall":
+        print(service.uninstall())
+    elif args.service_command == "status":
+        print(service.status())
+    elif args.service_command == "run":
+        return service.supervise(service.serve_command(args.host, args.port, args.data))
+    return 0
+
+
+def cmd_totp(args: argparse.Namespace) -> int:
+    store, _ = _store(args)
+    store.set("totp_secret", "")
+    store.set("totp_pending", "")
+    print("two-factor login switched off; the password alone logs in again")
+    return 0
+
+
 def cmd_token(args: argparse.Namespace) -> int:
     store, _ = _store(args)
     if args.token_command == "add":
@@ -272,6 +299,23 @@ def parser() -> argparse.ArgumentParser:
     pw.add_argument("--data", metavar="DIR")
     pw.set_defaults(func=cmd_password)
 
+    se = sub.add_parser("service", help="start the station at boot/login and keep it running")
+    se_sub = se.add_subparsers(dest="service_command", required=True)
+    for name, text in (("install", "install and start the background service"),
+                       ("uninstall", "stop and remove the background service"),
+                       ("status", "show whether it runs"),
+                       ("run", "run the station and restart it when it exits (used on Windows)")):
+        x = se_sub.add_parser(name, help=text)
+        if name in ("install", "run"):
+            x.add_argument("--host", default="127.0.0.1")
+            x.add_argument("--port", type=int, default=8472)
+            x.add_argument("--data", metavar="DIR")
+        x.set_defaults(func=cmd_service)
+
+    to = sub.add_parser("totp-off", help="switch off two-factor login (when the authenticator is lost)")
+    to.add_argument("--data", metavar="DIR")
+    to.set_defaults(func=cmd_totp)
+
     tk = sub.add_parser("token", help="API tokens for submitting messages remotely")
     tk.add_argument("--data", metavar="DIR")
     tk_sub = tk.add_subparsers(dest="token_command", required=True)
@@ -285,6 +329,12 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None and len(sys.argv) == 1 and getattr(sys, "frozen", False):
+        # The packaged program, started by a double click: run the station and open it in the browser.
+        import threading
+        import webbrowser
+        threading.Timer(2.0, lambda: webbrowser.open("http://127.0.0.1:8472/")).start()
+        argv = ["serve"]
     args = parser().parse_args(argv)
     try:
         return args.func(args)

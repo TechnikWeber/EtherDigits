@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import threading
@@ -67,6 +68,7 @@ DEFAULT_SETTINGS = {
     "station_encryption": False,   # allow encrypting on the station with stored pads
     "lead_seconds": 20,            # render this long before the transmission
     "tx_blocked": False,           # set by the emergency stop; nothing is sent until released
+    "ntp_server": "pool.ntp.org",  # checked once an hour; "" = do not check
 }
 
 PRIORITIES = (0, 1, 2)             # normal, high, urgent
@@ -173,6 +175,9 @@ class Store:
             elif isinstance(default, int):
                 if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 3650:
                     raise StoreError(f"{key} must be a whole number from 0 to 3650")
+            elif isinstance(default, str):
+                if not isinstance(value, str) or len(value) > 100 or not re.fullmatch(r"[A-Za-z0-9.:\[\]-]*", value):
+                    raise StoreError(f"{key} must be a host name")
         if "lead_seconds" in changes and not 5 <= changes["lead_seconds"] <= 300:
             raise StoreError("lead_seconds must be between 5 and 300")
         for key, value in changes.items():

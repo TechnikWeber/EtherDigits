@@ -89,14 +89,25 @@ card, a radio or an internet stream.
 - [x] Morse identification at the end of a transmission
 - [ ] GPIO PTT on a Raspberry Pi
 
-### 5. Unattended and remote
+### 5. Unattended and remote (done in 0.5)
 
-- [ ] Service setup: systemd, Windows service, launchd; `install.sh`
-- [ ] Health page, clock check (NTP), sound device reconnect
-- [ ] Login with optional TOTP; "submitter" role that can only hand in messages
-- [ ] Icecast stream
-- [ ] Packages for Windows and macOS in releases
-- [ ] Practice mode for receivers: dictation and check
+- [x] Service setup: systemd user service, launchd agent, Windows Startup
+      entry with a restarting supervisor; `install.sh`, `install.ps1`
+- [x] Clock check against a time server every hour (SNTP), scheduling by the
+      corrected time, warning above 2 s
+- [x] `/api/health` for monitoring tools
+- [x] Sound devices are looked up afresh for every transmission, so a
+      replugged USB sound card is found again
+- [x] Two-factor login (TOTP) with replay protection; `totp-off` for a lost
+      authenticator
+- [x] Icecast stream around the clock, reconnecting with back-off
+- [x] Packaged programs for Windows, macOS and Linux (PyInstaller, built on tags)
+- [x] Practice mode for receivers: dictation, checked group by group
+
+## Later
+
+- [ ] PTT via GPIO on a Raspberry Pi
+- [ ] Try the whole chain with a real radio and a Digirig
 
 ## Legal
 
