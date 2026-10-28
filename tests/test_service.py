@@ -340,6 +340,12 @@ class Api(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/api/messages", data="nope", headers=dict(self.h, **{"Content-Type": "application/json"}))
         self.assertEqual(r.status, 400)
 
+    async def test_pad_tool_download(self):
+        r = await self.client.get("/pad_tool.html")
+        self.assertEqual(r.status, 200)
+        self.assertIn("attachment", r.headers["Content-Disposition"])
+        self.assertIn('<script id="engine">', await r.text())
+
     async def test_index_and_headers(self):
         r = await self.client.get("/")
         self.assertEqual(r.status, 200)

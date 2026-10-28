@@ -119,3 +119,4 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .scale span:last-child{transform:translateX(-100%)}
 .btn.stop{background:var(--danger); border-color:var(--danger); color:#fff; font-weight:600}
 .pill.blocked, .pill.stopped{color:var(--amber); border-color:var(--amber)}
+a{color:var(--blue)}

@@ -637,12 +637,19 @@ async def index(_request: web.Request) -> web.FileResponse:
     return web.FileResponse(WEB_DIR / "index.html")
 
 
+async def pad_tool(_request: web.Request) -> web.FileResponse:
+    """The offline pad tool as a download, to open on a computer without network. It holds no keys."""
+    return web.FileResponse(WEB_DIR.parent / "pad_tool.html",
+                            headers={"Content-Disposition": 'attachment; filename="pad_tool.html"'})
+
+
 def make_app(store: Store, station: Station, data_dir: Path, run_station: bool = True) -> web.Application:
     app = web.Application(middlewares=[security_headers, errors, access], client_max_size=2 * 1024 * 1024)
     app[STORE], app[STATION], app[DATA] = store, station, Path(data_dir)
     app[SESSIONS], app[THROTTLE] = Sessions(), Throttle()
     r = app.router
     r.add_get("/", index)
+    r.add_get("/pad_tool.html", pad_tool)
     r.add_static("/static/", WEB_DIR, show_index=False)
     r.add_get("/api/session", get_session)
     r.add_post("/api/login", post_login)

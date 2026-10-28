@@ -33,6 +33,16 @@ END
 > Version 0.5: everything in the [plan](docs/plan.md) is built. The radio
 > output (sound card, PTT, CAT, GPIO) has not been tried with a real radio yet.
 
+## Quick start
+
+1. Install (below) and open <http://127.0.0.1:8472/>.
+2. **Schedules → Listen** plays a sample transmission; **Edit** sets voice, times and format; tick **Active**.
+3. **Messages → download pad_tool.html**, open it on a computer without network, create a pad, give the receiver a copy in person.
+4. In the pad tool, **Encrypt** a message and copy the groups; paste them in **Messages** at the station.
+5. The station reads them at the next slot; the receiver writes them down and **Decrypts** with the same pad.
+
+The [quick start guide](docs/quickstart.md) walks through it step by step, with going on air and the rules that keep it secret.
+
 ## Install
 
 **Linux and macOS:**
