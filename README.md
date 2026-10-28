@@ -21,9 +21,9 @@ REPEAT 21347 47890 11203
 END
 ```
 
-> Version 0.2: voices, transmission format, audio files and the one-time pad
-> tool. The scheduler, web interface and radio control follow; see
-> [docs/plan.md](docs/plan.md).
+> Version 0.3: voices, transmission format, the one-time pad tool, and the
+> station service with queue, schedules, web interface and API. Radio output
+> (sound card, PTT, CAT) follows next; see [docs/plan.md](docs/plan.md).
 
 ## Install
 
@@ -60,6 +60,58 @@ python -m etherdigits render -m "21347 47890"                  # transcript only
 | `--pad random\|zero` | fill a short last group instead of failing |
 | `--effect radio` | narrow band, a little drive and noise, like AM on shortwave |
 | `--format-file` | all format settings from JSON, see [examples/format.json](examples/format.json) |
+
+## Run the station
+
+```sh
+python -m etherdigits serve
+```
+
+Then open <http://127.0.0.1:8472/>. The station transmits on its schedules
+around the clock, fills quiet slots with random groups, logs every
+transmission and keeps recordings for a week. Until radio output arrives
+(stage 4), transmissions run in real time and are recorded only.
+
+![The station's web interface: on air, next transmissions, queue](docs/station.jpg)
+
+| Tab | What it does |
+|---|---|
+| Overview | on air or ready, the next transmissions in UTC and local time, the queue |
+| Messages | hand in digit groups: priority, number of transmissions, schedule, not before, expiry, delete after sending |
+| Schedules | fixed UTC times on chosen weekdays, or every N minutes; voice, callsign, filler, the whole transmission layout; listen to a preview, transmit now |
+| Log | every transmission with its transcript and recording |
+| Settings | admin password, discreet log, API tokens, pads for encrypting on the station |
+
+**Filler.** When nothing is waiting, a schedule sends random groups that look
+exactly like a message, says "no message", or stays silent. Only the first
+hides when there is traffic.
+
+**Access.** Without a password only the computer the station runs on can open
+the interface. To reach it from elsewhere, set a password and listen on all
+addresses; best behind a VPN such as WireGuard or Tailscale:
+
+```sh
+python -m etherdigits password
+python -m etherdigits serve --host 0.0.0.0
+```
+
+**Submitting remotely.** An API token can hand in messages and do nothing else:
+
+```sh
+python -m etherdigits token add "Agent North"
+curl -X POST http://station:8472/api/submit \
+  -H "Authorization: Bearer ed_..." -H "Content-Type: application/json" \
+  -d '{"groups": "48213 07460 14476", "priority": 1, "transmissions": 2, "expires_minutes": 1440}'
+```
+
+Fields: `groups` (required), `priority` (0 normal, 1 high, 2 urgent),
+`transmissions`, `schedule_id`, `not_before` / `expires` (ISO time, UTC) or
+`expires_minutes`, `burn` (default true: digits are deleted from the station
+after the last transmission).
+
+The data folder holds the database, recordings and pads:
+`~/.local/share/etherdigits` on Linux, `%APPDATA%\EtherDigits` on Windows,
+`~/Library/Application Support/EtherDigits` on macOS, or `--data DIR`.
 
 ## How numbers stations keep messages secret
 

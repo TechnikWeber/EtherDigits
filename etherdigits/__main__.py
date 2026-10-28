@@ -140,6 +140,66 @@ def cmd_checkerboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _store(args: argparse.Namespace):
+    from .paths import default_data_dir, prepare
+    from .store import Store
+    data = prepare(Path(args.data) if args.data else default_data_dir())
+    return Store(data / "etherdigits.db"), data
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import logging
+
+    from aiohttp import web
+
+    from .server import first_run, is_loopback_host, make_app
+    from .station import Station
+
+    store, data = _store(args)
+    if not is_loopback_host(args.host) and not store.get("admin_password"):
+        raise RuntimeError(f"listening on {args.host} needs an admin password first: etherdigits password")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    first_run(store)
+    station = Station(store, data)
+    print(f"EtherDigits {__version__}: http://{args.host}:{args.port}/  (data: {data})", flush=True)
+    web.run_app(make_app(store, station, data), host=args.host, port=args.port, print=None,
+                access_log=None)
+    return 0
+
+
+def cmd_password(args: argparse.Namespace) -> int:
+    import getpass
+
+    from .auth import check_new_password, hash_password
+
+    store, _ = _store(args)
+    first = getpass.getpass("New admin password: ")
+    problem = check_new_password(first)
+    if problem:
+        raise RuntimeError(problem)
+    if getpass.getpass("Again: ") != first:
+        raise RuntimeError("the passwords do not match")
+    store.set("admin_password", hash_password(first))
+    print("password set; restart a running station so old logins end")
+    return 0
+
+
+def cmd_token(args: argparse.Namespace) -> int:
+    store, _ = _store(args)
+    if args.token_command == "add":
+        tid, token = store.add_token(args.name)
+        print(f"token {tid} ({args.name}): {token}")
+        print("It is shown only now. It can submit messages and nothing else.")
+    elif args.token_command == "list":
+        for t in store.tokens():
+            print(f"{t['id']:4}  {t['name']:20}  created {t['created']}  last used {t['last_used'] or '-'}")
+    elif args.token_command == "revoke":
+        if not store.revoke_token(args.id):
+            raise RuntimeError(f"no token {args.id}")
+        print(f"token {args.id} revoked")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="etherdigits", description="Run your own numbers station.")
     p.add_argument("--version", action="version", version=f"EtherDigits {__version__}")
@@ -201,6 +261,26 @@ def parser() -> argparse.ArgumentParser:
     c = sub.add_parser("checkerboard", help="print the checkerboard for pencil and paper")
     c.add_argument("--lang", choices=sorted(otp.LAYOUTS), default="de")
     c.set_defaults(func=cmd_checkerboard)
+
+    sv = sub.add_parser("serve", help="run the station with its web interface")
+    sv.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1, this computer only)")
+    sv.add_argument("--port", type=int, default=8472, help="port (default: 8472)")
+    sv.add_argument("--data", metavar="DIR", help="data folder (default: per platform, or ETHERDIGITS_DATA)")
+    sv.set_defaults(func=cmd_serve)
+
+    pw = sub.add_parser("password", help="set the admin password of the web interface")
+    pw.add_argument("--data", metavar="DIR")
+    pw.set_defaults(func=cmd_password)
+
+    tk = sub.add_parser("token", help="API tokens for submitting messages remotely")
+    tk.add_argument("--data", metavar="DIR")
+    tk_sub = tk.add_subparsers(dest="token_command", required=True)
+    ta = tk_sub.add_parser("add")
+    ta.add_argument("name")
+    tk_sub.add_parser("list")
+    tr = tk_sub.add_parser("revoke")
+    tr.add_argument("id", type=int)
+    tk.set_defaults(func=cmd_token)
     return p
 
 

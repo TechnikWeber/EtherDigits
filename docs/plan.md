@@ -58,14 +58,20 @@ card, a radio or an internet stream.
 - [x] The same logic in Python (`etherdigits.otp`, CLI `pad`, `encrypt`,
       `decrypt`, `checkerboard`), tested against the HTML tool
 
-### 3. Service
+### 3. Service (done in 0.3)
 
-- [ ] Message queue in SQLite: priority, expiry, repeat count, burn after sending
-- [ ] Scheduler: fixed UTC times, every N minutes, weekdays, several schedules
-- [ ] Filler messages when the queue is empty (no traffic analysis)
-- [ ] Web interface (English, Deutsch): queue, schedule, preview, log, settings
-- [ ] HTTP API with tokens to submit messages remotely
-- [ ] Optional encryption on the station from stored pads, clearly warned
+- [x] Message queue in SQLite: priority, not before, expiry, number of
+      transmissions, burn after sending, bound to a schedule or any
+- [x] Scheduler: fixed UTC times on weekdays, every N minutes with offset,
+      several schedules; rendered ahead, sent on the second, never late
+- [x] Filler when the queue is empty: random groups, "no message" or silence
+- [x] Web interface (English, Deutsch): overview, queue, schedules with editor
+      and preview, log with recordings, settings
+- [x] HTTP API: tokens that can only submit
+- [x] Admin password (scrypt), sessions, login brake, local-only access
+      without a password, cross-site request protection
+- [x] Optional encryption on the station from uploaded pads, off by default
+- [x] Discreet log: no difference between message and filler on record
 
 ### 4. Radio
 

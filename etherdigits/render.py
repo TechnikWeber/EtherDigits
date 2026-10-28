@@ -106,8 +106,9 @@ def to_pcm16(audio: np.ndarray) -> bytes:
     return (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2").tobytes()
 
 
-def write_wav(path: Path, audio: np.ndarray, rate: int) -> None:
-    with wave.open(str(path), "wb") as w:
+def write_wav(path, audio: np.ndarray, rate: int) -> None:
+    """Write to a path or to an open binary file."""
+    with wave.open(path if hasattr(path, "write") else str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)

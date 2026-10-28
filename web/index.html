@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EtherDigits</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5' fill='%23F4B740'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <h1><span class="dot" id="airDot"></span>EtherDigits</h1>
+  <div class="clock" id="clock"></div>
+  <div class="spacer"></div>
+  <div class="lang" role="group" aria-label="Language">
+    <button class="btn small" data-lang="de">DE</button>
+    <button class="btn small" data-lang="en">EN</button>
+  </div>
+  <button class="btn small" id="logoutBtn" hidden data-i18n="logout"></button>
+</header>
+
+<div id="banner"></div>
+
+<section id="login" hidden>
+  <form class="card narrow" id="loginForm">
+    <h2 data-i18n="login"></h2>
+    <label for="loginPassword" data-i18n="password"></label>
+    <input type="password" id="loginPassword" autocomplete="current-password" required>
+    <div class="actions"><button class="btn primary" type="submit" data-i18n="login"></button></div>
+    <div class="note bad" id="loginMsg"></div>
+  </form>
+</section>
+
+<main id="app" hidden>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="overview" data-i18n="tab_overview"></button>
+    <button role="tab" data-tab="messages" data-i18n="tab_messages"></button>
+    <button role="tab" data-tab="schedules" data-i18n="tab_schedules"></button>
+    <button role="tab" data-tab="log" data-i18n="tab_log"></button>
+    <button role="tab" data-tab="settings" data-i18n="tab_settings"></button>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <section role="tabpanel" id="tab-overview">
+    <div class="grid">
+      <div class="card">
+        <h2 data-i18n="now"></h2>
+        <div id="onAir"></div>
+        <p class="muted" id="outputNote"></p>
+      </div>
+      <div class="card">
+        <h2 data-i18n="next_tx"></h2>
+        <ul class="list" id="nextList"></ul>
+      </div>
+      <div class="card">
+        <h2 data-i18n="queue"></h2>
+        <div class="big" id="queueCount"></div>
+        <div class="actions"><button class="btn primary" data-goto="messages" data-i18n="new_message"></button></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2 data-i18n="recent"></h2>
+      <div id="recentLog"></div>
+    </div>
+  </section>
+
+  <!-- MESSAGES -->
+  <section role="tabpanel" id="tab-messages" hidden>
+    <div class="grid two">
+      <form class="card" id="msgForm">
+        <h2 data-i18n="new_message"></h2>
+        <div class="seg" id="msgModeSeg" hidden>
+          <button type="button" data-mode="groups" aria-pressed="true" data-i18n="mode_groups"></button>
+          <button type="button" data-mode="text" aria-pressed="false" data-i18n="mode_text"></button>
+        </div>
+        <div id="msgGroupsBox">
+          <label for="msgGroups" data-i18n="groups_label"></label>
+          <textarea id="msgGroups" rows="5" spellcheck="false"></textarea>
+          <div class="stats" id="msgGroupsInfo"></div>
+        </div>
+        <div id="msgTextBox" hidden>
+          <p class="note warn" data-i18n="station_enc_warn"></p>
+          <label for="msgText" data-i18n="plain_text"></label>
+          <textarea id="msgText" rows="5"></textarea>
+          <label for="msgPad" data-i18n="pad"></label>
+          <select id="msgPad"></select>
+        </div>
+        <div class="row">
+          <div><label for="msgPriority" data-i18n="priority"></label>
+            <select id="msgPriority"><option value="0" data-i18n="prio_0"></option><option value="1" data-i18n="prio_1"></option><option value="2" data-i18n="prio_2"></option></select></div>
+          <div><label for="msgTransmissions" data-i18n="transmissions"></label>
+            <input type="number" id="msgTransmissions" min="1" max="100" value="1"></div>
+        </div>
+        <p class="muted" data-i18n="transmissions_hint"></p>
+        <label for="msgSchedule" data-i18n="schedule"></label>
+        <select id="msgSchedule"></select>
+        <div class="row">
+          <div><label for="msgNotBefore" data-i18n="not_before"></label><input type="datetime-local" id="msgNotBefore"></div>
+          <div><label for="msgExpires" data-i18n="expires"></label><input type="datetime-local" id="msgExpires"></div>
+        </div>
+        <label for="msgLabel" data-i18n="label"></label>
+        <input type="text" id="msgLabel" maxlength="80">
+        <p class="muted" data-i18n="label_hint"></p>
+        <label class="check"><input type="checkbox" id="msgBurn" checked> <span data-i18n="burn"></span></label>
+        <div class="actions"><button class="btn primary" type="submit" data-i18n="queue_it"></button></div>
+        <div class="note" id="msgMsg"></div>
+      </form>
+      <div class="card">
+        <h2 data-i18n="queue"></h2>
+        <div class="seg" id="msgFilter">
+          <button type="button" data-filter="queued" aria-pressed="true" data-i18n="filter_queued"></button>
+          <button type="button" data-filter="" aria-pressed="false" data-i18n="filter_all"></button>
+        </div>
+        <div id="msgList" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCHEDULES -->
+  <section role="tabpanel" id="tab-schedules" hidden>
+    <div class="actions" style="margin-top:0"><button class="btn primary" id="newSchedule" data-i18n="new_schedule"></button></div>
+    <div id="schedList" class="grid" style="margin-top:14px"></div>
+    <audio id="previewAudio" controls hidden></audio>
+    <pre class="out" id="previewText" hidden></pre>
+  </section>
+
+  <!-- LOG -->
+  <section role="tabpanel" id="tab-log" hidden>
+    <div class="card"><div id="logList"></div></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section role="tabpanel" id="tab-settings" hidden>
+    <div class="grid two">
+      <div>
+        <form class="card" id="pwForm">
+          <h2 data-i18n="password"></h2>
+          <p class="muted" id="pwHint"></p>
+          <div id="pwCurrentBox"><label for="pwCurrent" data-i18n="pw_current"></label><input type="password" id="pwCurrent" autocomplete="current-password"></div>
+          <label for="pwNew" data-i18n="pw_new"></label><input type="password" id="pwNew" autocomplete="new-password">
+          <label for="pwNew2" data-i18n="pw_again"></label><input type="password" id="pwNew2" autocomplete="new-password">
+          <div class="actions"><button class="btn primary" type="submit" data-i18n="save"></button></div>
+          <div class="note" id="pwMsg"></div>
+        </form>
+        <form class="card" id="setForm" style="margin-top:16px">
+          <h2 data-i18n="station_settings"></h2>
+          <label class="check"><input type="checkbox" id="setDiscreet"> <span data-i18n="discreet"></span></label>
+          <p class="muted" data-i18n="discreet_hint"></p>
+          <div class="row">
+            <div><label for="setKeep" data-i18n="keep_days"></label><input type="number" id="setKeep" min="0" max="3650"></div>
+            <div><label for="setLead" data-i18n="lead"></label><input type="number" id="setLead" min="5" max="300"></div>
+          </div>
+          <label class="check" style="margin-top:12px"><input type="checkbox" id="setStationEnc"> <span data-i18n="station_enc"></span></label>
+          <p class="muted" data-i18n="station_enc_hint"></p>
+          <div class="actions"><button class="btn primary" type="submit" data-i18n="save"></button></div>
+          <div class="note" id="setMsg"></div>
+        </form>
+      </div>
+      <div>
+        <div class="card">
+          <h2 data-i18n="tokens"></h2>
+          <p class="muted" data-i18n="tokens_hint"></p>
+          <form class="row" id="tokenForm" style="align-items:flex-end">
+            <div><label for="tokenName" data-i18n="token_name"></label><input type="text" id="tokenName" maxlength="40"></div>
+            <div style="flex:0"><button class="btn" type="submit" data-i18n="create"></button></div>
+          </form>
+          <div class="note warn" id="tokenNew"></div>
+          <div id="tokenList" style="margin-top:12px"></div>
+        </div>
+        <div class="card" style="margin-top:16px" id="padsCard">
+          <h2 data-i18n="pads"></h2>
+          <p class="muted" data-i18n="pads_hint"></p>
+          <input type="file" id="padFile" accept=".json,application/json" hidden>
+          <div class="actions"><button class="btn" id="padUpload" data-i18n="pad_upload"></button></div>
+          <div class="note" id="padMsg"></div>
+          <div id="padList" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="schedDialog">
+  <form id="schedForm" method="dialog">
+    <h2 id="schedTitle"></h2>
+    <label for="sName" data-i18n="name"></label><input type="text" id="sName" maxlength="60" required>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="sEnabled"> <span data-i18n="enabled"></span></label>
+    <label data-i18n="when"></label>
+    <div class="seg" id="sKindSeg">
+      <button type="button" data-kind="times" data-i18n="kind_times"></button>
+      <button type="button" data-kind="interval" data-i18n="kind_interval"></button>
+    </div>
+    <div id="sTimesBox"><label for="sTimes" data-i18n="times"></label><input type="text" id="sTimes" placeholder="18:00, 20:30"></div>
+    <div id="sIntervalBox" class="row">
+      <div><label for="sInterval" data-i18n="interval_minutes"></label><input type="number" id="sInterval" min="1" max="10080"></div>
+      <div><label for="sOffset" data-i18n="offset_minutes"></label><input type="number" id="sOffset" min="0"></div>
+    </div>
+    <label data-i18n="weekdays"></label>
+    <div class="days" id="sDays"></div>
+    <div class="row">
+      <div><label for="sVoice" data-i18n="voice"></label><select id="sVoice"></select></div>
+      <div><label for="sEffect" data-i18n="effect"></label><select id="sEffect"></select></div>
+    </div>
+    <div class="row">
+      <div><label for="sCallsign" data-i18n="callsign"></label><input type="text" id="sCallsign" inputmode="numeric" maxlength="10"></div>
+      <div><label for="sMax" data-i18n="max_messages"></label><input type="number" id="sMax" min="1" max="20"></div>
+    </div>
+    <label for="sFiller" data-i18n="filler"></label>
+    <select id="sFiller"><option value="random" data-i18n="filler_random"></option><option value="null" data-i18n="filler_null"></option><option value="skip" data-i18n="filler_skip"></option></select>
+    <div class="row" id="sFillerRange">
+      <div><label for="sFillerMin" data-i18n="filler_min"></label><input type="number" id="sFillerMin" min="1" max="500"></div>
+      <div><label for="sFillerMax" data-i18n="filler_max"></label><input type="number" id="sFillerMax" min="1" max="500"></div>
+    </div>
+    <p class="note warn" id="sSkipWarn" data-i18n="filler_skip_warn"></p>
+    <details>
+      <summary data-i18n="format"></summary>
+      <div class="row">
+        <div><label for="fInterval" data-i18n="interval_signal"></label><select id="fInterval"></select></div>
+        <div><label for="fIntervalRepeats" data-i18n="interval_repeats"></label><input type="number" id="fIntervalRepeats" min="0" max="100"></div>
+      </div>
+      <div class="row">
+        <div><label for="fCallRepeats" data-i18n="callsign_repeats"></label><input type="number" id="fCallRepeats" min="0" max="100"></div>
+        <div><label for="fMsgRepeats" data-i18n="message_repeats"></label><input type="number" id="fMsgRepeats" min="1" max="100"></div>
+      </div>
+      <div class="row">
+        <div><label for="fDigitGap" data-i18n="digit_gap"></label><input type="number" id="fDigitGap" min="0" max="30" step="0.05"></div>
+        <div><label for="fGroupGap" data-i18n="group_gap"></label><input type="number" id="fGroupGap" min="0" max="30" step="0.1"></div>
+        <div><label for="fSectionGap" data-i18n="section_gap"></label><input type="number" id="fSectionGap" min="0" max="30" step="0.1"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="fCount"> <span data-i18n="announce_count"></span></label>
+      <label class="check"><input type="checkbox" id="fTwice"> <span data-i18n="group_twice"></span></label>
+      <label class="check"><input type="checkbox" id="fEndTone"> <span data-i18n="end_tone"></span></label>
+    </details>
+    <div class="note bad" id="schedMsg"></div>
+    <div class="actions">
+      <button class="btn primary" type="button" id="schedSave" data-i18n="save"></button>
+      <button class="btn" type="button" id="schedPreview" data-i18n="preview"></button>
+      <button class="btn" type="button" id="schedCancel" data-i18n="cancel"></button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
