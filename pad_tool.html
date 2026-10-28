@@ -1,4 +1,9 @@
 <!DOCTYPE html>
+<!--
+  EtherDigits pad tool. Required Notice: Copyright (c) 2026 Philipp Weber (https://github.com/TechnikWeber/EtherDigits)
+  MIT License with an additional restriction: no military use, including armed forces and intelligence services.
+  Full terms: https://github.com/TechnikWeber/EtherDigits/blob/main/LICENSE
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -161,6 +166,7 @@
       <label for="padLang" data-i18n="board_lang"></label>
       <select id="padLang"><option value="de">Deutsch</option><option value="en">English</option></select>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="padSpaces" checked> <span data-i18n="spaces"></span></label>
+      <label class="check"><input type="checkbox" id="padCheck" checked> <span data-i18n="check_opt"></span></label>
       <label for="padCodebook" data-i18n="codebook"></label>
       <textarea id="padCodebook" class="code" spellcheck="false"></textarea>
       <p class="muted" data-i18n="codebook_hint"></p>
@@ -225,6 +231,7 @@
         <textarea id="decKey" rows="4" spellcheck="false"></textarea>
         <label for="decLang" data-i18n="board_lang"></label>
         <select id="decLang"><option value="de">Deutsch</option><option value="en">English</option></select>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="decCheck" checked> <span data-i18n="check_last"></span></label>
       </div>
       <div class="actions"><button class="btn primary" id="decBtn" data-i18n="decrypt"></button></div>
       <div class="note bad" id="decMsg"></div>
@@ -232,6 +239,7 @@
     <div class="card">
       <h2 data-i18n="plain_text"></h2>
       <div class="out" id="decOut"></div>
+      <div class="note" id="decCheckResult"></div>
       <div class="note warn" id="decDone"></div>
       <details><summary data-i18n="digits_detail"></summary><div class="out" id="decDigits" style="font-size:13px;margin-top:8px"></div></details>
     </div>
@@ -249,6 +257,7 @@
       <p data-i18n="board_rule_2"></p>
       <p data-i18n="board_rule_3"></p>
       <p data-i18n="board_rule_4"></p>
+      <p data-i18n="board_rule_5"></p>
       <label for="tryText" data-i18n="try_it"></label>
       <input type="text" id="tryText">
       <div class="out" id="tryOut" style="margin-top:8px;font-size:14px"></div>
@@ -441,16 +450,16 @@ const Engine = (() => {
     return out;
   }
 
-  // pad = {name, created, language, group_size, spaces, codebook:[[code,word]], pages:[{id,key}], used:[ids]}
+  // pad = {name, created, language, group_size, spaces, check, codebook:[[code,word]], pages:[{id,key}], used:[ids]}
   function newPad({pages = 20, groupsPerPage = 50, language = "de", codebook = null, groupSize = GROUP_SIZE,
-                   spaces = true, name = "", random} = {}) {
+                   spaces = true, name = "", check = true, random} = {}) {
     if (!(pages >= 1 && pages <= 1000)) throw new OtpError("pages must be between 1 and 1000", "pages_range");
     if (!(groupsPerPage >= 5 && groupsPerPage <= 1000)) throw new OtpError("groups per page must be between 5 and 1000", "groups_range");
     table(language);
     const ids = new Set();
     while (ids.size < pages) ids.add(randomDigits(groupSize, random));
     return {
-      name, language, group_size: groupSize, spaces,
+      name, language, group_size: groupSize, spaces, check,
       created: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
       codebook: normalizeCodebook(codebook === null ? (DEFAULT_CODEBOOKS[language] || []) : codebook),
       pages: Array.from(ids).map(id => ({id, key: randomDigits(groupsPerPage * groupSize, random)})),
@@ -463,7 +472,7 @@ const Engine = (() => {
     const codebook = {};
     for (const [c, w] of pad.codebook) codebook[c] = w;
     return {format: "etherdigits-pad", version: 1, name: pad.name, created: pad.created, language: pad.language,
-            group_size: pad.group_size, spaces: pad.spaces, codebook, pages: pad.pages, used: pad.used};
+            group_size: pad.group_size, spaces: pad.spaces, check: pad.check, codebook, pages: pad.pages, used: pad.used};
   }
 
   function padFromJson(data) {
@@ -481,6 +490,7 @@ const Engine = (() => {
     const pad = {
       name: data.name || "", created: data.created || "", language: data.language || "de",
       group_size: parseInt(data.group_size, 10) || GROUP_SIZE, spaces: data.spaces !== false,
+      check: !!data.check,  // pads before 0.6 have no check group
       codebook: normalizeCodebook(book), pages, used: (data.used || []).map(String),
     };
     table(pad.language);
@@ -490,10 +500,31 @@ const Engine = (() => {
   const unused = pad => pad.pages.filter(p => !pad.used.includes(p.id)).map(p => p.id);
   const pageKey = (pad, id) => { const p = pad.pages.find(p => p.id === id); return p ? p.key : null; };
 
+  // Column sums of all groups, mod 10: 12345 + 67890 -> 79135. Encrypted with the message,
+  // so only the receiver can tell a message from filler; a misheard digit always shows.
+  function checkGroup(digits, size = GROUP_SIZE) {
+    const sums = new Array(size).fill(0);
+    Array.from(digits).forEach((d, i) => { sums[i % size] += +d; });
+    return sums.map(x => String(x % 10)).join("");
+  }
+
   function prepare(text, pad) {
     let plain = encode(text, pad.language, pad.codebook, pad.spaces);
-    if (plain) plain += PAD_DIGIT.repeat((pad.group_size - plain.length % pad.group_size) % pad.group_size);
+    if (!plain) return plain;
+    const size = pad.group_size;
+    plain += PAD_DIGIT.repeat((size - plain.length % size) % size);
+    if (pad.check) plain += checkGroup(plain, size);
     return plain;
+  }
+
+  // [message digits, true | false | null (no check group)]
+  function unpack(plain, check, size = GROUP_SIZE) {
+    if (!check) return [plain, null];
+    if (plain.length < 2 * size || plain.length % size) {
+      return [plain.length > size ? plain.slice(0, plain.length - plain.length % size - size) : "", false];
+    }
+    const body = plain.slice(0, -size);
+    return [body, checkGroup(body, size) === plain.slice(-size)];
   }
 
   function encrypt(text, pad, pageId = null) {
@@ -515,26 +546,32 @@ const Engine = (() => {
     return [pageId, ...groupsOf(add(plain, key), size)];
   }
 
-  function decryptWithKey(cipher, key, lang, codebook) {
+  function decryptWithKey(cipher, key, lang, codebook, check = false) {
     if (cipher.length > key.length) throw new OtpError("the message is longer than the key page", "longer_than_key");
-    return decode(subtract(cipher, key), lang, codebook);
+    const plain = subtract(cipher, key);
+    const [body, ok] = unpack(plain, check);
+    return {text: decode(body, lang, codebook), check: ok, plain};
   }
 
   function decrypt(groups, pad, markUsed = true) {
+    return decryptMessage(groups, pad, markUsed).text;
+  }
+
+  function decryptMessage(groups, pad, markUsed = true) {
     const text = Array.isArray(groups) ? groups.join("") : String(groups);
     const digits = Array.from(text).filter(isDigit).join("");
     const size = pad.group_size;
     const pageId = digits.slice(0, size), cipher = digits.slice(size);
     const key = pageKey(pad, pageId);
     if (key === null) throw new OtpError(`page ${pageId} is not in this pad`, "no_page", {page: pageId});
-    const plain = decryptWithKey(cipher, key, pad.language, pad.codebook);
+    const result = decryptWithKey(cipher, key, pad.language, pad.codebook, pad.check);
     if (markUsed && !pad.used.includes(pageId)) pad.used.push(pageId);
-    return plain;
+    return result;
   }
 
   return {GROUP_SIZE, FIG, CODE, LAYOUTS, SIGNS, DEFAULT_CODEBOOKS, OtpError, normalize, table, normalizeCodebook,
           parseCodebook, encode, decode, add, subtract, groupsOf, randomDigits, newPad, padToJson, padFromJson,
-          unused, pageKey, prepare, encrypt, decrypt, decryptWithKey};
+          unused, pageKey, checkGroup, prepare, unpack, encrypt, decrypt, decryptMessage, decryptWithKey};
 })();
 if (typeof module !== "undefined") module.exports = Engine;
 </script>
@@ -562,6 +599,11 @@ const T = {
     page_list: "Seiten",
     message: "Nachricht", page_to_use: "Seite", encrypt: "Verschlüsseln",
     enc_stats: "<b>{chars}</b> Zeichen → <b>{digits}</b> Ziffern → <b>{groups}</b> Gruppen + Kennung · Seite fasst <b>{cap}</b>",
+    check_opt: "Prüfgruppe anhängen (empfohlen): erkennt Hörfehler und Füllmeldungen, kostet eine Gruppe",
+    check_last: "Die letzte Gruppe ist eine Prüfgruppe",
+    check_ok: "Prüfgruppe stimmt: Die Nachricht ist vollständig und richtig mitgeschrieben.",
+    check_bad: "Prüfgruppe stimmt nicht: verhört oder vertippt, oder keine Nachricht für dieses Heft (eine Füllmeldung).",
+    board_rule_5: "<b>Prüfgruppe</b>: Hefte mit Prüfgruppe hängen eine Gruppe an, deren Ziffern die Spaltensummen aller Gruppen sind (ohne Übertrag). Beim Empfänger: nach dem Abziehen die Spalten addieren und mit der letzten Gruppe vergleichen.",
     too_long: "Zu lang für eine Seite. Kürze die Nachricht oder nutze das Codebuch.",
     dropped: "Wird weggelassen: {chars}",
     what_is_sent: "So sieht der Text für das Schachbrett aus",
@@ -619,6 +661,11 @@ const T = {
     page_list: "Pages",
     message: "Message", page_to_use: "Page", encrypt: "Encrypt",
     enc_stats: "<b>{chars}</b> characters → <b>{digits}</b> digits → <b>{groups}</b> groups + indicator · a page holds <b>{cap}</b>",
+    check_opt: "Add a check group (recommended): catches misheard digits and filler, costs one group",
+    check_last: "The last group is a check group",
+    check_ok: "Check group matches: the message is complete and copied right.",
+    check_bad: "Check group does not match: misheard or mistyped, or not a message for this pad (filler).",
+    board_rule_5: "<b>Check group</b>: pads with a check group add one group whose digits are the column sums of all groups (without carry). Receiver: after taking off the key, add up the columns and compare with the last group.",
     too_long: "Too long for one page. Shorten the message or use the codebook.",
     dropped: "Left out: {chars}",
     what_is_sent: "The text as the checkerboard sees it",
@@ -810,7 +857,8 @@ $("newPadBtn").addEventListener("click", () => {
     const codebook = Engine.parseCodebook($("padCodebook").value);
     const p = Engine.newPad({
       pages: parseInt($("padPages").value, 10), groupsPerPage: parseInt($("padGroups").value, 10),
-      language: $("padLang").value, codebook, spaces: $("padSpaces").checked, name: $("padName").value.trim(),
+      language: $("padLang").value, codebook, spaces: $("padSpaces").checked, check: $("padCheck").checked,
+      name: $("padName").value.trim(),
     });
     setPad(p, true);
   } catch (err) {
@@ -879,28 +927,31 @@ $("encCopy").addEventListener("click", async () => {
 // --- decrypt ---------------------------------------------------------------
 
 $("decBtn").addEventListener("click", () => {
-  alertNote("decMsg", ""); $("decDone").textContent = "";
+  alertNote("decMsg", ""); $("decDone").textContent = ""; $("decCheckResult").textContent = "";
   try {
     const raw = $("decText").value;
     const digits = Array.from(raw).filter(c => c >= "0" && c <= "9").join("");
-    let text, plainDigits;
+    let text, plainDigits, check = null;
     if (pad) {
       const size = pad.group_size, pageId = digits.slice(0, size);
       const key = Engine.pageKey(pad, pageId);
       if (key === null) throw new Engine.OtpError(`page ${pageId} is not in this pad`, "no_page", {page: pageId});
-      plainDigits = Engine.subtract(digits.slice(size), key);
       const wasUsed = pad.used.includes(pageId);
-      text = Engine.decrypt(digits, pad);
+      const r = Engine.decryptMessage(digits, pad);
+      text = r.text; plainDigits = r.plain; check = r.check;
       if (!wasUsed) { $("decDone").textContent = t("dec_done", {page: pageId}); markDirty(); }
     } else {
       const key = Array.from($("decKey").value).filter(c => c >= "0" && c <= "9").join("");
       const l = $("decLang").value;
       const cipher = digits.slice(Engine.GROUP_SIZE);
       if (!key) throw new Engine.OtpError("no key", "no_key");
-      plainDigits = Engine.subtract(cipher, key);
-      text = Engine.decryptWithKey(cipher, key, l, Engine.DEFAULT_CODEBOOKS[l]);
+      const r = Engine.decryptWithKey(cipher, key, l, Engine.DEFAULT_CODEBOOKS[l], $("decCheck").checked);
+      text = r.text; plainDigits = r.plain; check = r.check;
     }
     $("decOut").textContent = text;
+    const c = $("decCheckResult");
+    c.className = "note " + (check === true ? "" : "bad");
+    c.textContent = check === true ? t("check_ok") : check === false ? t("check_bad") : "";
     $("decDigits").textContent = Engine.groupsOf(plainDigits).join(" ");
   } catch (err) {
     alertNote("decMsg", errText(err));
@@ -972,7 +1023,7 @@ function printBoard() {
   const book = pad ? pad.codebook : Engine.normalizeCodebook(Engine.DEFAULT_CODEBOOKS[l]);
   $("print").innerHTML = `<div class="sheet"><header><div class="pid" style="font-size:20px">${esc(t("board"))}</div>
     <div class="meta">EtherDigits · ${esc(t("lang_" + l))}${pad ? " · " + esc(pad.name || pad.created) : ""}</div></header>
-    ${boardTable(l)}<p>${t("board_rule_2")}</p><p>${t("board_rule_3")}</p><p>${t("board_rule_4")}</p>
+    ${boardTable(l)}<p>${t("board_rule_2")}</p><p>${t("board_rule_3")}</p><p>${t("board_rule_4")}</p><p>${t("board_rule_5")}</p>
     <h3>${esc(t("codebook"))}</h3><ul class="codebook">${codebookList(book)}</ul></div>`;
   window.print();
 }

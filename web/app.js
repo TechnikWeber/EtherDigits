@@ -27,7 +27,10 @@ const T = {
     cancel_msg: "Abbrechen", delete: "Löschen", burned: "gelöscht",
     new_schedule: "Neuer Zeitplan", edit: "Bearbeiten", preview: "Probe anhören", transmit_now: "Jetzt senden", test_tx: "Testsendung",
     enabled: "Aktiv", disabled: "aus", when: "Wann", kind_times: "Feste Uhrzeiten", kind_interval: "Alle N Minuten",
-    times: "Uhrzeiten (UTC, mit Komma getrennt)", interval_minutes: "Abstand in Minuten", offset_minutes: "Versatz in Minuten",
+    times: "Uhrzeiten (mit Komma getrennt)",
+    window_start: "Von", window_end: "Bis", window_hint: "Leer lassen = rund um die Uhr. Mit Zeitfenster beginnt die Reihe zur Startzeit, und der letzte Termin liegt spätestens zur Endzeit; über Mitternacht geht auch.",
+    timezone: "Zeitzone", timezone_hint: "UTC wie echte Zahlensender, oder z. B. Europe/Berlin: Dann bleibt 18:00 das ganze Jahr 18 Uhr deutscher Zeit.",
+    window_desc: "{from}–{to}", interval_minutes: "Abstand in Minuten", offset_minutes: "Versatz in Minuten",
     weekdays: "Wochentage", days: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
     voice: "Stimme", effect: "Klang", effect_none: "klar", effect_radio: "Kurzwelle",
     callsign: "Kennung", max_messages: "Nachrichten pro Sendung",
@@ -120,7 +123,10 @@ const T = {
     cancel_msg: "Cancel", delete: "Delete", burned: "deleted",
     new_schedule: "New schedule", edit: "Edit", preview: "Listen", transmit_now: "Transmit now", test_tx: "Test transmission",
     enabled: "Active", disabled: "off", when: "When", kind_times: "Fixed times", kind_interval: "Every N minutes",
-    times: "Times (UTC, comma separated)", interval_minutes: "Interval in minutes", offset_minutes: "Offset in minutes",
+    times: "Times (comma separated)",
+    window_start: "From", window_end: "To", window_hint: "Leave empty for around the clock. With a window the series starts at the start time and the last slot is at or before the end; past midnight works too.",
+    timezone: "Time zone", timezone_hint: "UTC like real numbers stations, or e.g. Europe/Berlin: then 18:00 stays 18:00 German time all year.",
+    window_desc: "{from}–{to}", interval_minutes: "Interval in minutes", offset_minutes: "Offset in minutes",
     weekdays: "Weekdays", days: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
     voice: "Voice", effect: "Sound", effect_none: "clean", effect_radio: "shortwave",
     callsign: "Callsign", max_messages: "Messages per transmission",
@@ -260,6 +266,12 @@ function utc(isoText, withDate = true) {
 function local(isoText) {
   if (!isoText) return "";
   return new Date(isoText).toLocaleString(lang, {weekday: "short", hour: "2-digit", minute: "2-digit"});
+}
+// A time as the schedule's own zone shows it ("18:00"), falling back to UTC.
+function inZone(isoText, zone) {
+  try {
+    return new Date(isoText).toLocaleTimeString(lang, {timeZone: zone || "UTC", hour: "2-digit", minute: "2-digit", hour12: false});
+  } catch { return utc(isoText, false); }
 }
 function countdown(isoText) {
   const s = Math.max(0, Math.round((new Date(isoText) - Date.now()) / 1000));
@@ -499,8 +511,11 @@ async function loadSchedules() { state.schedules = await api("GET", "/api/schedu
 function describe(s) {
   const days = t("days");
   const dayText = s.weekdays.length === 7 ? t("every_day") : s.weekdays.map(d => days[d]).join(" ");
-  if (s.kind === "times") return `${dayText} ${s.times.join(", ")} UTC`;
-  return `${t("every_n", {n: s.interval_minutes})}${s.offset_minutes ? " " + t("offset", {n: s.offset_minutes}) : ""} · ${dayText}`;
+  const tz = s.timezone || "UTC";
+  if (s.kind === "times") return `${dayText} ${s.times.join(", ")} ${tz}`;
+  const when = s.window_start ? t("window_desc", {from: s.window_start, to: s.window_end})
+    : (s.offset_minutes ? t("offset", {n: s.offset_minutes}) : "");
+  return `${t("every_n", {n: s.interval_minutes})} ${when} · ${dayText} · ${tz}`.replace(/ +/g, " ");
 }
 
 function renderSchedules() {
@@ -512,7 +527,7 @@ function renderSchedules() {
       <div class="head"><h3>${esc(s.name)}</h3><span class="pill ${s.enabled ? "ok" : ""}">${esc(s.enabled ? t("enabled") : t("disabled"))}</span></div>
       <div class="when">${esc(describe(s))}</div>
       <p class="muted">${esc(voiceName(s.voice))} · ${esc(t("callsign"))} ${esc(s.format.callsign || state.voices?.format_defaults.callsign || "")} · ${esc(t("filler_" + s.filler))}</p>
-      <p class="muted">${esc(s.upcoming.length ? t("next_runs", {list: s.upcoming.map(x => utc(x, false)).join(", ")}) : t("none_planned"))}</p>
+      <p class="muted">${esc(s.upcoming.length ? t("next_runs", {list: s.upcoming.map(x => inZone(x, s.timezone)).join(", ")}) : t("none_planned"))}</p>
       <div class="actions">
         <button class="btn small" data-edit="${s.id}">${esc(t("edit"))}</button>
         <button class="btn small" data-preview="${s.id}">${esc(t("preview"))}</button>
@@ -587,9 +602,15 @@ function fillStaticSelects() {
   $("sEffect").innerHTML = v.effects.map(e => `<option value="${e}">${esc(t("effect_" + e))}</option>`).join("");
   $("fInterval").innerHTML = v.intervals.map(i => `<option value="${i}">${esc(t("iv_" + i))}</option>`).join("");
   $("sRigMode").innerHTML = v.rig_modes.map(m => `<option value="${m}">${esc(m || t("rig_mode_keep"))}</option>`).join("");
+  $("sTzList").innerHTML = (v.timezones || ["UTC"]).map(z => `<option value="${esc(z)}">`).join("");
   const days = t("days");
   $("sDays").innerHTML = days.map((d, i) => `<label><input type="checkbox" value="${i}"> ${esc(d)}</label>`).join("");
 }
+
+function windowVisibility() {
+  $("sOffsetBox").hidden = !!$("sWinStart").value;
+}
+$("sWinStart").addEventListener("input", windowVisibility);
 
 function setKind(kind) {
   editKind = kind;
@@ -609,6 +630,7 @@ function openEditor(s) {
   const d = state.voices.format_defaults;
   editing = s ? s.id : null;
   s = s || {name: "", enabled: true, kind: "times", times: ["18:00"], weekdays: [0, 1, 2, 3, 4, 5, 6], interval_minutes: 60, offset_minutes: 0,
+            window_start: "", window_end: "", timezone: "UTC",
             voice: state.voices.voices[0]?.id || "de", effect: "none", format: {}, filler: "random", filler_min: 10, filler_max: 30, max_messages: 1};
   const f = Object.assign({}, d, s.format);
   $("schedTitle").textContent = s.name || t("new_schedule");
@@ -616,6 +638,8 @@ function openEditor(s) {
   setKind(s.kind);
   $("sTimes").value = s.times.join(", ");
   $("sInterval").value = s.interval_minutes; $("sOffset").value = s.offset_minutes;
+  $("sWinStart").value = s.window_start || ""; $("sWinEnd").value = s.window_end || "";
+  $("sTz").value = s.timezone || "UTC"; windowVisibility();
   $("sDays").querySelectorAll("input").forEach(c => { c.checked = s.weekdays.includes(+c.value); });
   $("sVoice").value = voiceId(s.voice); $("sEffect").value = s.effect;
   $("sCallsign").value = f.callsign; $("sMax").value = s.max_messages;
@@ -647,7 +671,8 @@ function editorData() {
     name: $("sName").value.trim(), enabled: $("sEnabled").checked, kind: editKind,
     times: $("sTimes").value.split(/[,\s]+/).filter(Boolean),
     weekdays: [...$("sDays").querySelectorAll("input:checked")].map(c => +c.value),
-    interval_minutes: +$("sInterval").value, offset_minutes: +$("sOffset").value,
+    interval_minutes: +$("sInterval").value, offset_minutes: $("sWinStart").value ? 0 : +$("sOffset").value,
+    window_start: $("sWinStart").value, window_end: $("sWinEnd").value, timezone: $("sTz").value.trim() || "UTC",
     voice: $("sVoice").value, effect: $("sEffect").value, format: fmt,
     filler: $("sFiller").value, filler_min: +$("sFillerMin").value, filler_max: +$("sFillerMax").value,
     max_messages: +$("sMax").value,

@@ -32,7 +32,7 @@ from .groups import GroupError
 from .radio import RIG_MODES, RadioError, Rig, gpio_chips, list_devices, serial_ports, validate_output
 from .groups import random_groups
 from .render import EFFECTS, MELODIES, render, write_wav
-from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso
+from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso, time_zones
 from .script import INTERVALS, Format, Transmission, build_script
 from .station import Station
 from .store import PRIORITIES, Store, StoreError
@@ -266,7 +266,7 @@ async def get_voices(request: web.Request) -> web.Response:
     packs = [{"id": p.id, "name": p.name, "language": p.language, "license": p.license} for p in list_packs()]
     return web.json_response({"voices": packs, "effects": list(EFFECTS), "intervals": list(INTERVALS),
                               "melodies": list(MELODIES), "fillers": list(FILLERS), "rig_modes": list(RIG_MODES),
-                              "format_defaults": Format().__dict__})
+                              "format_defaults": Format().__dict__, "timezones": time_zones()})
 
 
 def schedule_json(schedule: Schedule, station: Station) -> dict:

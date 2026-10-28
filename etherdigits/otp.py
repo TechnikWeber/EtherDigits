@@ -8,8 +8,12 @@ Encryption, step by step:
    numbers are written in figure mode (98, every digit doubled, 98).
 3. Pad with 9s to a full group. A 9 or 99 at the very end is an unfinished
    code, which the decoder ignores, so padding never shows up in the text.
-4. Add the key page digit by digit without carry (mod 10).
-5. Put the page id in front, unencrypted, so the receiver knows which page
+4. Pads made with a check group (the default) add one more group: digit by
+   digit the column sums of all groups, mod 10. It is encrypted with the
+   rest, so only the receiver can tell a message from filler; a single
+   misheard digit always shows. It can be checked with pencil and paper.
+5. Add the key page digit by digit without carry (mod 10).
+6. Put the page id in front, unencrypted, so the receiver knows which page
    to use.
 
 The browser tool (pad_tool.html) contains the same logic in JavaScript;
@@ -239,6 +243,7 @@ class Pad:
     created: str = ""
     used: list[str] = field(default_factory=list)
     name: str = ""
+    check: bool = False                         # last group is a check group (pads before 0.6 have none)
 
     def unused(self) -> list[str]:
         return [p for p in self.pages if p not in self.used]
@@ -252,6 +257,7 @@ class Pad:
             "language": self.language,
             "group_size": self.group_size,
             "spaces": self.spaces,
+            "check": self.check,
             "codebook": self.codebook,
             "pages": [{"id": pid, "key": key} for pid, key in self.pages.items()],
             "used": self.used,
@@ -280,6 +286,7 @@ class Pad:
             created=data.get("created") or "",
             used=[str(u) for u in data.get("used") or []],
             name=data.get("name") or "",
+            check=bool(data.get("check", False)),
         )
         _table(pad.language)
         return pad
@@ -287,7 +294,7 @@ class Pad:
 
 def new_pad(pages: int = 20, groups_per_page: int = 50, language: str = "de",
             codebook: dict[str, str] | None = None, group_size: int = GROUP_SIZE,
-            spaces: bool = True, name: str = "") -> Pad:
+            spaces: bool = True, name: str = "", check: bool = True) -> Pad:
     """A fresh pad. Page ids are random, so they do not reveal how many messages were sent."""
     if not 1 <= pages <= 1000:
         raise OtpError("pages must be between 1 and 1000")
@@ -306,6 +313,7 @@ def new_pad(pages: int = 20, groups_per_page: int = 50, language: str = "de",
         spaces=spaces,
         created=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         name=name,
+        check=check,
     )
 
 
@@ -324,6 +332,26 @@ def save_pad(pad: Pad, path: Path) -> None:
     tmp.replace(path)
 
 
+def check_group(digits: str, size: int = GROUP_SIZE) -> str:
+    """Column sums of all groups, mod 10: 12345 + 67890 -> 79135."""
+    sums = [0] * size
+    for i, d in enumerate(digits):
+        sums[i % size] += int(d)
+    return "".join(str(s % 10) for s in sums)
+
+
+def prepare(text: str, pad: Pad) -> str:
+    """The plain digits that get encrypted: checkerboard, padding, check group."""
+    plain = encode(text, pad.language, pad.codebook, pad.spaces)
+    if not plain:
+        return ""
+    size = pad.group_size
+    plain += PAD_DIGIT * (-len(plain) % size)
+    if pad.check:
+        plain += check_group(plain, size)
+    return plain
+
+
 def encrypt(text: str, pad: Pad, page_id: str | None = None) -> list[str]:
     """Encrypt with an unused page and mark it used. Returns indicator group + cipher groups."""
     if page_id is None:
@@ -335,11 +363,10 @@ def encrypt(text: str, pad: Pad, page_id: str | None = None) -> list[str]:
         raise OtpError(f"page {page_id} is not in this pad")
     if page_id in pad.used:
         raise OtpError(f"page {page_id} was already used. A page must never be used twice")
-    plain = encode(text, pad.language, pad.codebook, pad.spaces)
+    plain = prepare(text, pad)
     if not plain:
         raise OtpError("the message is empty")
     size = pad.group_size
-    plain += PAD_DIGIT * (-len(plain) % size)
     key = pad.pages[page_id]
     if len(plain) > len(key):
         raise OtpError(
@@ -350,7 +377,22 @@ def encrypt(text: str, pad: Pad, page_id: str | None = None) -> list[str]:
 
 
 def decrypt(groups: list[str] | str, pad: Pad, mark_used: bool = True) -> str:
-    """Decrypt indicator group + cipher groups. Decrypting a used page again is fine."""
+    """Decrypt indicator group + cipher groups to text. Decrypting a used page again is fine."""
+    return decrypt_message(groups, pad, mark_used)["text"]
+
+
+def unpack(plain: str, check: bool, size: int = GROUP_SIZE) -> tuple[str, bool | None]:
+    """Split off and verify the check group: (message digits, True/False, or None without check)."""
+    if not check:
+        return plain, None
+    if len(plain) < 2 * size or len(plain) % size:
+        return plain[:len(plain) - len(plain) % size - size] if len(plain) > size else "", False
+    body, given = plain[:-size], plain[-size:]
+    return body, check_group(body, size) == given
+
+
+def decrypt_message(groups: list[str] | str, pad: Pad, mark_used: bool = True) -> dict:
+    """Like decrypt, with the check result: {"text", "check": True | False | None, "plain"}."""
     if isinstance(groups, str):
         groups = groups.split()
     digits = "".join(c for c in "".join(groups) if c in ASCII_DIGITS)
@@ -363,4 +405,6 @@ def decrypt(groups: list[str] | str, pad: Pad, mark_used: bool = True) -> str:
         raise OtpError("the message is longer than the key page")
     if mark_used and page_id not in pad.used:
         pad.used.append(page_id)
-    return decode(subtract(cipher, key), pad.language, pad.codebook)
+    plain = subtract(cipher, key)
+    body, ok = unpack(plain, pad.check, size)
+    return {"text": decode(body, pad.language, pad.codebook), "check": ok, "plain": plain}

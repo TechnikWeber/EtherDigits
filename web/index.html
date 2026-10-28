@@ -327,12 +327,20 @@
       <button type="button" data-kind="interval" data-i18n="kind_interval"></button>
     </div>
     <div id="sTimesBox"><label for="sTimes" data-i18n="times"></label><input type="text" id="sTimes" placeholder="18:00, 20:30"></div>
-    <div id="sIntervalBox" class="row">
-      <div><label for="sInterval" data-i18n="interval_minutes"></label><input type="number" id="sInterval" min="1" max="10080"></div>
-      <div><label for="sOffset" data-i18n="offset_minutes"></label><input type="number" id="sOffset" min="0"></div>
+    <div id="sIntervalBox">
+      <div class="row">
+        <div><label for="sInterval" data-i18n="interval_minutes"></label><input type="number" id="sInterval" min="1" max="10080"></div>
+        <div><label for="sWinStart" data-i18n="window_start"></label><input type="time" id="sWinStart"></div>
+        <div><label for="sWinEnd" data-i18n="window_end"></label><input type="time" id="sWinEnd"></div>
+      </div>
+      <p class="muted" data-i18n="window_hint"></p>
+      <div class="row" id="sOffsetBox"><div style="max-width:200px"><label for="sOffset" data-i18n="offset_minutes"></label><input type="number" id="sOffset" min="0"></div></div>
     </div>
     <label data-i18n="weekdays"></label>
     <div class="days" id="sDays"></div>
+    <label for="sTz" data-i18n="timezone"></label>
+    <input type="text" id="sTz" list="sTzList" placeholder="UTC" style="max-width:280px"><datalist id="sTzList"></datalist>
+    <p class="muted" data-i18n="timezone_hint"></p>
     <div class="row">
       <div><label for="sVoice" data-i18n="voice"></label><select id="sVoice"></select></div>
       <div><label for="sEffect" data-i18n="effect"></label><select id="sEffect"></select></div>

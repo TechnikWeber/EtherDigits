@@ -14,6 +14,7 @@ a = Analysis(  # noqa: F821
         (os.path.join(root, "web"), "web"),
         (os.path.join(root, "pad_tool.html"), "."),
         (os.path.join(root, "LICENSE"), "."),
+        (os.path.join(root, "NOTICE.md"), "."),
     ],
     hiddenimports=collect_submodules("etherdigits"),
     excludes=["tkinter", "piper", "onnxruntime"],

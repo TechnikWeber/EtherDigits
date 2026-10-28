@@ -78,7 +78,8 @@ def cmd_pad_new(args: argparse.Namespace) -> int:
         codebook = otp.parse_codebook(Path(args.codebook).read_text(encoding="utf-8"))
     else:
         codebook = None
-    pad = otp.new_pad(args.pages, args.groups, args.lang, codebook, spaces=not args.no_spaces, name=args.name or "")
+    pad = otp.new_pad(args.pages, args.groups, args.lang, codebook, spaces=not args.no_spaces, name=args.name or "",
+                      check=not args.no_check)
     otp.save_pad(pad, out)
     print(f"wrote {out}: {len(pad.pages)} pages of {args.groups} groups, checkerboard {pad.language}, "
           f"{len(pad.codebook)} codebook words")
@@ -93,7 +94,8 @@ def cmd_pad_info(args: argparse.Namespace) -> int:
     print(f"pad        {pad.name or Path(args.pad).name}")
     print(f"created    {pad.created}")
     print(f"pages      {pages} ({len(pad.unused())} unused, {len(pad.used)} used), {groups} groups each")
-    print(f"language   {pad.language}, codebook {len(pad.codebook)} words, spaces {'on' if pad.spaces else 'off'}")
+    print(f"language   {pad.language}, codebook {len(pad.codebook)} words, spaces {'on' if pad.spaces else 'off'}, "
+          f"check group {'on' if pad.check else 'off'}")
     return 0
 
 
@@ -114,9 +116,12 @@ def cmd_encrypt(args: argparse.Namespace) -> int:
 def cmd_decrypt(args: argparse.Namespace) -> int:
     path = Path(args.pad)
     pad = otp.load_pad(path)
-    text = otp.decrypt(_read_text(args.groups), pad)
+    result = otp.decrypt_message(_read_text(args.groups), pad)
     otp.save_pad(pad, path)
-    print(text)
+    print(result["text"])
+    if result["check"] is False:
+        print("check group does not match: a misheard digit, or not a message for this pad", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -267,6 +272,7 @@ def parser() -> argparse.ArgumentParser:
     pn.add_argument("--codebook", metavar="FILE", help="own codebook: lines of 'code word'")
     pn.add_argument("--no-codebook", action="store_true", help="no codebook at all")
     pn.add_argument("--no-spaces", action="store_true", help="leave out spaces between words (shorter)")
+    pn.add_argument("--no-check", action="store_true", help="no check group (one group shorter, errors go unnoticed)")
     pn.add_argument("--name", help="a name for the pad")
     pn.add_argument("--force", action="store_true", help="overwrite an existing file")
     pn.set_defaults(func=cmd_pad_new)

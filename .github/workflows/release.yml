@@ -39,7 +39,7 @@ jobs:
       - name: Pack
         shell: bash
         run: |
-          cp README.md LICENSE pad_tool.html dist/
+          cp README.md LICENSE NOTICE.md pad_tool.html dist/
           cd dist
           if [ "$RUNNER_OS" = "Windows" ]; then
             7z a "../${{ matrix.asset }}.zip" .

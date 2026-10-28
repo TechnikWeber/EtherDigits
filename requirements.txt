@@ -1,5 +1,7 @@
 numpy>=1.24
 aiohttp>=3.9
+# time zones for schedules; Linux and macOS have them built in
+tzdata; sys_platform == "win32"
 # radio output: sound card (needs PortAudio, see README) and serial PTT
 sounddevice>=0.4
 pyserial>=3.5

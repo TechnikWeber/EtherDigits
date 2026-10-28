@@ -6,7 +6,7 @@
   <a href="https://github.com/TechnikWeber/EtherDigits/actions/workflows/tests.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/EtherDigits/tests.yml?branch=main&label=tests"></a>
   <img alt="Platform: Linux | Windows | macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue">
   <img alt="UI and voices: English | Deutsch" src="https://img.shields.io/badge/UI%20%26%20voices-English%20%7C%20Deutsch-informational">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="LICENSE"><img alt="License: MIT + no military use" src="https://img.shields.io/badge/license-MIT%20%2B%20no%20military-lightgrey"></a>
 </p>
 
 **Run your own numbers station.** EtherDigits reads out groups of digits in the
@@ -117,7 +117,7 @@ Set up the output under Settings.
 |---|---|
 | Overview | on air or ready with a live level meter, the next transmissions in UTC and local time, the queue, emergency stop |
 | Messages | hand in digit groups: priority, number of transmissions, schedule, not before, expiry, delete after sending |
-| Schedules | fixed UTC times on chosen weekdays, or every N minutes; voice, callsign, frequency, filler, the whole transmission layout; listen to a preview, transmit now |
+| Schedules | fixed times on chosen weekdays, or every N minutes around the clock or in a window such as 18:00–19:00; UTC or a local time zone; voice, callsign, frequency, filler, the whole transmission layout; listen to a preview, transmit now |
 | Log | every transmission with its transcript and recording |
 | Practice | random groups to copy by ear, checked group by group |
 | Settings | password and two-factor login, discreet log, time server, output and radio, internet stream, API tokens, pads |
@@ -259,6 +259,19 @@ and a three-digit number. The last group is filled with 9s, which the decoder
 ignores. A pad file also carries its language, codebook and the list of used
 pages.
 
+**Check group.** New pads add one more group at the end: digit by digit the
+column sums of all groups, without carry (`12345` + `67890` → `79135`). It is
+encrypted with the message, so only the receiver can tell a message from
+filler. After decrypting, the tool says whether it matches: a single misheard
+digit always shows, and filler that happens to start with one of your page
+numbers fails too. With pencil and paper: add up the columns and compare.
+
+**Is it for me?** The receiver only needs the first group. If it is not one of
+the page numbers in their pad, the transmission is filler or for someone else,
+and there is nothing to decrypt. A missed message costs only itself: every page
+stands alone, the order does not matter, and repeats (within a transmission and
+over several transmissions) give more chances to copy it.
+
 ## Voices
 
 Three voices come with EtherDigits: two German, one English, all free to share. You can
@@ -287,4 +300,8 @@ pushed.
 
 ## License
 
-[MIT](LICENSE). The voice packs are CC0 or public domain, see [voices/README.md](voices/README.md).
+[MIT](LICENSE) **plus: no military use**, which includes armed forces and
+intelligence services. Free to use, change and share otherwise, also
+commercially. Versions up to 0.5.0 were plain MIT. The voice packs are CC0 or
+public domain, see [voices/README.md](voices/README.md); notes and third-party
+parts: [NOTICE.md](NOTICE.md).

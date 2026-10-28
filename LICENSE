@@ -1,3 +1,33 @@
+EtherDigits — License
+Copyright (c) 2026 Philipp Weber.
+
+EtherDigits is licensed under the MIT License, reproduced unmodified below,
+together with one Additional Restriction imposed separately by the licensor.
+Both apply. Where they differ, the Additional Restriction prevails.
+
+Additional Restriction (No Military Use)
+----------------------------------------
+Notwithstanding anything in the MIT License, including its permission to use
+the software "without restriction", the software may NOT be used, in whole or
+in part, for any military, defense, warfare, weapons, or armed-conflict
+purpose. This includes the design, development, testing, production, operation,
+guidance, or deployment of weapons or military systems, and any use by or on
+behalf of armed forces, intelligence services, or paramilitary organizations.
+None of these is a permitted purpose.
+
+Anyone who passes on the software, with or without changes, must pass on this
+Additional Restriction together with the license terms below. Because of it,
+the software as a whole is offered as "MIT License with an additional
+restriction" and must not be described as being under the unmodified MIT
+License.
+
+Not covered by this license: the voice packs in voices/, which are CC0 1.0 or
+public domain as stated in voices/README.md, and third-party software that
+EtherDigits uses or that the packaged programs contain, which keeps its own
+license (see NOTICE.md).
+
+================================================================================
+
 MIT License
 
 Copyright (c) 2026 Philipp Weber

@@ -91,6 +91,36 @@ class Pads(unittest.TestCase):
                 otp.Pad.from_json({"format": "something-else"})
 
 
+class CheckGroup(unittest.TestCase):
+    def test_column_sums(self):
+        self.assertEqual(otp.check_group("1234567890"), "79135")
+        self.assertEqual(otp.check_group("9999999999"), "88888")
+
+    def test_new_pads_have_it(self):
+        pad = otp.new_pad(pages=2, groups_per_page=20)
+        groups = otp.encrypt("Treffen heute", pad)
+        self.assertEqual(otp.decrypt_message(groups, pad), {
+            "text": "TREFFEN HEUTE", "check": True, "plain": otp.subtract("".join(groups[1:]), pad.pages[groups[0]])})
+
+    def test_misheard_digit(self):
+        pad = otp.new_pad(pages=1, groups_per_page=20)
+        groups = otp.encrypt("Treffen heute 18 Uhr", pad)
+        for i in range(1, len(groups)):
+            for j in range(5):
+                wrong = list(groups)
+                wrong[i] = wrong[i][:j] + str((int(wrong[i][j]) + 1) % 10) + wrong[i][j + 1:]
+                self.assertFalse(otp.decrypt_message(wrong, pad)["check"], (i, j))
+
+    def test_old_pads_without_check(self):
+        pad = otp.new_pad(pages=1, groups_per_page=20, check=False)
+        data = pad.to_json()
+        del data["check"]  # as written by version 0.5
+        old = otp.Pad.from_json(data)
+        groups = otp.encrypt("Heute", old)
+        self.assertEqual(len(groups), 1 + len(otp.prepare("Heute", old)) // 5)
+        self.assertEqual(otp.decrypt_message(groups, old)["check"], None)
+
+
 class CommandLine(unittest.TestCase):
     def run_main(self, *args):
         out, err = io.StringIO(), io.StringIO()
@@ -110,6 +140,11 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(json.loads(Path(path).read_text())["used"], [groups.split()[0]])
             code, text, _ = self.run_main("decrypt", "--pad", path, groups)
             self.assertEqual((code, text.strip()), (0, "HEUTE SOFORT"))
+            wrong = groups.split()
+            wrong[1] = str((int(wrong[1][0]) + 1) % 10) + wrong[1][1:]
+            code, _, err = self.run_main("decrypt", "--pad", path, " ".join(wrong))
+            self.assertEqual(code, 1)
+            self.assertIn("check group", err)
 
 
 if __name__ == "__main__":

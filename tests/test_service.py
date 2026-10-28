@@ -46,13 +46,38 @@ class Schedules(unittest.TestCase):
         s = Schedule(kind="interval", interval_minutes=60, weekdays=[0]).validate()  # Mondays
         self.assertEqual(s.next_run(at("2026-10-28 10:30")), at("2026-11-02 00:00"))
 
+    def test_window(self):
+        s = Schedule(kind="interval", interval_minutes=10, window_start="18:00", window_end="19:00",
+                     weekdays=[0, 1, 2, 3, 4]).validate()
+        runs = s.upcoming(at("2026-10-30 17:55"), 9)  # a Friday
+        self.assertEqual(runs[:2], [at("2026-10-30 18:00"), at("2026-10-30 18:10")])
+        self.assertEqual(runs[6], at("2026-10-30 19:00"))  # the end is included
+        self.assertEqual(runs[7], at("2026-11-02 18:00"))  # then Monday
+
+    def test_window_past_midnight(self):
+        s = Schedule(kind="interval", interval_minutes=60, window_start="23:00", window_end="01:00",
+                     weekdays=[4]).validate()  # starts on Fridays
+        self.assertEqual(s.upcoming(at("2026-10-30 12:00"), 4),
+                         [at("2026-10-30 23:00"), at("2026-10-31 00:00"), at("2026-10-31 01:00"), at("2026-11-06 23:00")])
+
+    def test_time_zone_follows_daylight_saving(self):
+        s = Schedule(times=["18:00"], timezone="Europe/Berlin").validate()
+        self.assertEqual(s.upcoming(at("2026-03-28 12:00"), 2), [at("2026-03-28 17:00"), at("2026-03-29 16:00")])
+        self.assertEqual(s.next_run(at("2026-10-25 12:00")), at("2026-10-25 17:00"))  # back to winter time
+
+    def test_weekdays_in_the_zone(self):
+        # 00:30 on a Saturday in Tokyo is still Friday in UTC.
+        s = Schedule(times=["00:30"], weekdays=[5], timezone="Asia/Tokyo").validate()
+        self.assertEqual(s.next_run(at("2026-10-28 00:00")), at("2026-10-30 15:30"))
+
     def test_disabled(self):
         self.assertIsNone(Schedule(enabled=False).validate().next_run(at("2026-10-28 10:00")))
 
     def test_validation(self):
         bad = [{"times": ["25:00"]}, {"times": []}, {"weekdays": []}, {"kind": "sometimes"},
                {"filler_min": 30, "filler_max": 10}, {"format": {"callsign": "abc"}}, {"name": " "},
-               {"interval_minutes": 0}, {"colour": "red"}]
+               {"interval_minutes": 0}, {"colour": "red"}, {"timezone": "Mars/Olympus"},
+               {"window_start": "18:00"}, {"window_start": "18:00", "window_end": "18:00"}]
         for data in bad:
             with self.assertRaises(ScheduleError, msg=data):
                 Schedule.from_dict({"name": "x", **data})

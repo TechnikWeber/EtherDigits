@@ -53,7 +53,11 @@ output yet: it plays nothing out loud, it only keeps time and records.
    (clean or shortwave), the callsign, the times, and under *Transmission
    layout* how often everything is repeated. **Listen** inside the editor plays
    your changes before you save them.
-4. Tick **Active** and save. The overview now shows the next transmissions.
+4. Set the **time zone**: UTC like real numbers stations, or e.g.
+   *Europe/Berlin*, then 18:00 means 18:00 German time all year. *Every N
+   minutes* can have a window, e.g. Monday to Friday every 10 minutes from 18:00
+   to 19:00.
+5. Tick **Active** and save. The overview now shows the next transmissions.
 
 Want to hear every real transmission on this computer? **Settings → Output and
 radio → Monitor on the station computer**, pick your speakers, save. Switch it
@@ -96,11 +100,15 @@ with one HTTP request; see the [README](../README.md#the-station).
 
 ## 6. Receive and decrypt
 
-The receiver listens on the frequency or the stream at the announced time and
-writes the groups down. The tab **Practice** is for training exactly that.
+The receiver listens on the frequency or the stream at the announced time. The
+first group is the page number: if it is not in their pad, the transmission is
+filler or for someone else, and they can stop listening. Otherwise they write
+all groups down. The tab **Practice** is for training exactly that.
 
 Then, in the pad tool with the same pad: tab **Decrypt**, type the groups (page
-number first), **Decrypt**. Without a computer, the printed checkerboard card
+number first), **Decrypt**. Below the text the tool says whether the check
+group matches; if not, a digit was misheard or mistyped, so compare with the
+repeat. Without a computer, the printed checkerboard card
 and the pad page are enough: subtract the page digit by digit without borrowing
 (2 − 5 = 7), then read the digits off the checkerboard.
 

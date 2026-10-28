@@ -107,6 +107,12 @@ card, a radio or an internet stream.
 - [x] PTT via a GPIO pin of a Raspberry Pi (kernel GPIO interface, Pi 1 to 5),
       ARM64 build and tests
 
+### 6. After the first release (0.6)
+
+- [x] Check group at the end of every message (new pads), pencil-checkable
+- [x] Schedules: time window for "every N minutes", time zone per schedule
+- [x] License: MIT plus no military use
+
 ## Later
 
 - [ ] Try the whole chain with a real radio and a Digirig

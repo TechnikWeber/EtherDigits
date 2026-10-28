@@ -1,8 +1,16 @@
 """Schedules: when a station transmits, and how it sounds.
 
-All times are UTC. Listeners abroad cannot be expected to know about
-daylight saving time at the station, and real numbers stations always
-announced their schedules in UTC.
+Times are in the schedule's time zone, UTC by default. Real numbers stations
+announced their schedules in UTC, so listeners abroad need not know about
+daylight saving time at the station; with a zone such as Europe/Berlin,
+18:00 stays 18:00 local time all year.
+
+Two kinds:
+- "times": fixed times on chosen weekdays.
+- "interval": every N minutes on chosen weekdays, either around the clock
+  (on a fixed UTC grid) or inside a daily window such as 18:00 to 19:00,
+  starting at the window's beginning. A window may run past midnight; it
+  belongs to the weekday it starts on.
 """
 
 from __future__ import annotations
@@ -10,6 +18,8 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from .groups import GroupError
 from .radio import RIG_MODES
@@ -43,6 +53,9 @@ class Schedule:
     filler_min: int = 10
     filler_max: int = 30
     max_messages: int = 1                     # messages per transmission
+    window_start: str = ""                    # interval only: "18:00"; "" = around the clock
+    window_end: str = ""                      # interval only: "19:00" (last slot at or before it)
+    timezone: str = "UTC"                     # IANA name, e.g. Europe/Berlin
     frequency_khz: float = 0.0                # 0 = leave the radio as it is (needs CAT)
     rig_mode: str = ""                        # e.g. AM, USB; "" = leave as it is
 
@@ -73,6 +86,18 @@ class Schedule:
             raise ScheduleError("the interval must be between 1 minute and 7 days")
         if not 0 <= int(self.offset_minutes) < int(self.interval_minutes):
             raise ScheduleError("the offset must be smaller than the interval")
+        self.timezone = str(self.timezone or "UTC").strip()
+        try:
+            zone(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ScheduleError(f"unknown time zone {self.timezone!r} (e.g. UTC, Europe/Berlin)") from exc
+        self.window_start, self.window_end = str(self.window_start or "").strip(), str(self.window_end or "").strip()
+        if self.window_start or self.window_end:
+            for t in (self.window_start, self.window_end):
+                if not _TIME.match(t):
+                    raise ScheduleError(f"window time {t!r} must look like 18:30; give both start and end")
+            if self.window_start == self.window_end:
+                raise ScheduleError("the window needs different start and end times")
         if self.effect not in EFFECTS:
             raise ScheduleError(f"effect must be one of {', '.join(EFFECTS)}")
         if self.filler not in FILLERS:
@@ -120,25 +145,38 @@ class Schedule:
         if not self.enabled:
             return None
         after = after.astimezone(timezone.utc)
+        tz = zone(self.timezone)
         if self.kind == "times":
-            day = after.replace(hour=0, minute=0, second=0, microsecond=0)
-            for offset in range(8):
-                date = day + timedelta(days=offset)
-                if date.weekday() not in self.weekdays:
-                    continue
-                for t in self.times:
-                    hour, minute = map(int, t.split(":"))
-                    candidate = date.replace(hour=hour, minute=minute)
-                    if candidate > after:
-                        return candidate
-            return None
+            minutes = [_minutes(t) for t in self.times]
+        elif self.window_start:
+            start, end = _minutes(self.window_start), _minutes(self.window_end)
+            if end < start:
+                end += 1440  # runs past midnight
+            minutes = list(range(start, end + 1, int(self.interval_minutes)))
+        else:
+            return self._next_on_grid(after, tz)
+        # Wall-clock times in the schedule's zone; yesterday too, for windows past midnight.
+        today = after.astimezone(tz).date()
+        for offset in range(-1, 9):
+            day = today + timedelta(days=offset)
+            if day.weekday() not in self.weekdays:
+                continue
+            midnight = datetime(day.year, day.month, day.day, tzinfo=tz)
+            for m in minutes:
+                candidate = (midnight + timedelta(minutes=m)).astimezone(timezone.utc)
+                if candidate > after:
+                    return candidate
+        return None
+
+    def _next_on_grid(self, after: datetime, tz) -> datetime | None:
+        """Every N minutes around the clock, on a fixed UTC grid (shifted by the offset)."""
         step = timedelta(minutes=int(self.interval_minutes))
         base = EPOCH + timedelta(minutes=int(self.offset_minutes))
         n = (after - base) // step + 1
         candidate = base + n * step
         # Skip runs on days that are switched off; a week holds at most 10080 runs.
         for _ in range(10081):
-            if candidate.weekday() in self.weekdays:
+            if candidate.astimezone(tz).weekday() in self.weekdays:
                 return candidate
             candidate += step
         return None
@@ -152,6 +190,25 @@ class Schedule:
                 break
             runs.append(t)
         return runs
+
+
+def _minutes(text: str) -> int:
+    hour, minute = map(int, text.split(":"))
+    return hour * 60 + minute
+
+
+@lru_cache(maxsize=64)
+def zone(name: str):
+    if name in ("UTC", "Etc/UTC", "Z"):
+        return timezone.utc
+    return ZoneInfo(name)
+
+
+def time_zones() -> list[str]:
+    try:
+        return ["UTC"] + sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/")))
+    except Exception:  # no time zone data on this system
+        return ["UTC"]
 
 
 def iso(dt: datetime | None) -> str | None:
