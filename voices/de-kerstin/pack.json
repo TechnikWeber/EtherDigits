@@ -1,0 +1,26 @@
+{
+  "id": "de-kerstin",
+  "name": "Kerstin (Deutsch)",
+  "language": "de",
+  "license": "CC0-1.0",
+  "source": "Piper voice de_DE-kerstin-low; dataset https://github.com/rhasspy/dataset-voice-kerstin (CC0)",
+  "generator": "Piper (de_DE-kerstin-low.onnx), scripts/build_voicepack.py",
+  "clips": {
+    "0": "0.wav",
+    "1": "1.wav",
+    "2": "2.wav",
+    "3": "3.wav",
+    "4": "4.wav",
+    "5": "5.wav",
+    "6": "6.wav",
+    "7": "7.wav",
+    "8": "8.wav",
+    "9": "9.wav",
+    "attention": "attention.wav",
+    "groups": "groups.wav",
+    "repeat": "repeat.wav",
+    "separator": "separator.wav",
+    "no_message": "no_message.wav",
+    "end": "end.wav"
+  }
+}

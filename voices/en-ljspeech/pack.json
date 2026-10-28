@@ -1,0 +1,26 @@
+{
+  "id": "en-ljspeech",
+  "name": "LJ (English)",
+  "language": "en",
+  "license": "public domain",
+  "source": "Piper voice en_US-ljspeech-high; dataset https://keithito.com/LJ-Speech-Dataset/ (public domain)",
+  "generator": "Piper (en_US-ljspeech-high.onnx), scripts/build_voicepack.py",
+  "clips": {
+    "0": "0.wav",
+    "1": "1.wav",
+    "2": "2.wav",
+    "3": "3.wav",
+    "4": "4.wav",
+    "5": "5.wav",
+    "6": "6.wav",
+    "7": "7.wav",
+    "8": "8.wav",
+    "9": "9.wav",
+    "attention": "attention.wav",
+    "groups": "groups.wav",
+    "repeat": "repeat.wav",
+    "separator": "separator.wav",
+    "no_message": "no_message.wav",
+    "end": "end.wav"
+  }
+}

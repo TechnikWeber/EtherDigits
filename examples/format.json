@@ -1,0 +1,13 @@
+{
+  "callsign": "472",
+  "interval": "melody",
+  "interval_repeats": 3,
+  "callsign_repeats": 5,
+  "announce_group_count": true,
+  "message_repeats": 2,
+  "group_twice": false,
+  "digit_gap": 0.2,
+  "group_gap": 1.0,
+  "section_gap": 1.8,
+  "end_tone": true
+}
