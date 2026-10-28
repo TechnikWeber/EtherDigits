@@ -29,9 +29,8 @@ END
 | ![Log with transcript and recording of every transmission](docs/screenshots/log.jpg) | ![Settings: sound card, monitor on the station computer, PTT, CAT](docs/screenshots/settings.jpg) |
 | ![Listening practice: random groups to copy by ear, checked group by group](docs/screenshots/practice.jpg) | ![The offline pad tool: a message on the left, the groups to send on the right](docs/screenshots/pad-tool.jpg) |
 
-> Version 0.5: everything in the [plan](docs/plan.md) is built except PTT over
-> the GPIO pins of a Raspberry Pi. The radio output (sound card, PTT, CAT) has
-> not been tried with a real radio yet.
+> Version 0.5: everything in the [plan](docs/plan.md) is built. The radio
+> output (sound card, PTT, CAT, GPIO) has not been tried with a real radio yet.
 
 ## Install
 
@@ -55,7 +54,8 @@ your password once to install PortAudio and ffmpeg (sound card, MP3 and stream);
 appended after `bash -s --`.
 
 **Packaged program:** the [releases](https://github.com/TechnikWeber/EtherDigits/releases)
-carry a single program file for Windows, macOS (Apple silicon) and Linux. Start
+carry a single program file for Windows, macOS (Apple silicon), Linux and
+Raspberry Pi (64-bit). Start
 it with a double click; it opens the web interface. These files are not signed,
 so Windows SmartScreen and macOS Gatekeeper ask once whether to run them. On
 Linux the sound card needs PortAudio from the system (`libportaudio2`, `portaudio`).
@@ -117,7 +117,7 @@ Set up the output under Settings.
 |---|---|
 | Output | none, or the sound card that feeds the radio, with its level in dB |
 | Monitor | plays the same transmission on a second device of the station computer, e.g. its speakers, to hear what goes out. Off by default |
-| PTT | VOX (the radio keys itself), a serial line (RTS/DTR, e.g. Digirig), or CAT; with lead and tail time |
+| PTT | VOX (the radio keys itself), a serial line (RTS/DTR, e.g. Digirig), CAT, or a GPIO pin of a Raspberry Pi; with lead and tail time |
 | CAT | sets frequency and mode per schedule through Hamlib's `rigctld` |
 | Internet stream | the station as an Icecast source, around the clock, silence between transmissions |
 | Transmit limit | no transmission runs longer; too long ones are refused before going on air |
@@ -134,6 +134,17 @@ CAT needs `rigctld` running next to the station, for example:
 ```sh
 rigctld -m 3073 -r /dev/ttyUSB0      # model 3073 = Icom IC-7300; list models with: rigctl -l
 ```
+
+**Raspberry Pi.** EtherDigits runs on Raspberry Pi OS 64-bit (Pi 3, 4, 5, Zero
+2): the installer above works there, and the releases carry an ARM64 program.
+The headphone jack or a USB sound card feeds the radio, and PTT can come from
+a GPIO pin (default GPIO17, pin 11 of the header; "active low" for circuits
+that key on low). Never wire a pin to the radio directly: put a transistor or
+an optocoupler in between. The pin is driven through the kernel's GPIO
+interface, no extra package needed; the user must be in the group `gpio`,
+which the installer takes care of. So far this is tested on ARM64 Linux in the
+build pipeline, not yet on a Pi itself; 32-bit systems and the first Pi Zero
+are not tested at all.
 
 **Filler.** When nothing is waiting, a schedule sends random groups that look
 exactly like a message, says "no message", or stays silent. Only the first

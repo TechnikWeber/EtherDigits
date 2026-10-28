@@ -104,10 +104,13 @@ card, a radio or an internet stream.
 - [x] Packaged programs for Windows, macOS and Linux (PyInstaller, built on tags)
 - [x] Practice mode for receivers: dictation, checked group by group
 
+- [x] PTT via a GPIO pin of a Raspberry Pi (kernel GPIO interface, Pi 1 to 5),
+      ARM64 build and tests
+
 ## Later
 
-- [ ] PTT via GPIO on a Raspberry Pi
 - [ ] Try the whole chain with a real radio and a Digirig
+- [ ] Try GPIO PTT on a real Raspberry Pi
 
 ## Legal
 

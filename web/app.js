@@ -78,6 +78,10 @@ const T = {
     cw_ident: "Morse-Kennung am Schluss", cw_wpm: "Tempo (WpM)",
     st_blocked: "gesperrt", st_stopped: "abgebrochen",
     code: "Code aus der Authenticator-App", tab_practice: "Übung", transcript: "Transkript",
+    ptt_gpio: "GPIO-Pin (Raspberry Pi)", gpio_pin: "GPIO (BCM-Nummer)", gpio_chip: "GPIO-Chip (leer = automatisch)",
+    gpio_active_low: "Aktiv low (senden, wenn der Pin auf 0 geht)",
+    gpio_found: "Raspberry Pi erkannt: {chip}. GPIO17 ist Pin 11 der Stiftleiste. Nie direkt ans Funkgerät, immer über Transistor oder Optokoppler.",
+    gpio_none: "Hier wurde kein Raspberry-Pi-GPIO gefunden.", gpio_denied: "Kein Zugriff auf {chip}: Benutzer in die Gruppe gpio aufnehmen und neu anmelden.",
     totp: "Zwei-Faktor-Anmeldung (TOTP)", totp_on: "An: Zum Anmelden braucht es Passwort und Code.", totp_off: "Aus.", totp_needs_pw: "Setze zuerst ein Passwort.",
     totp_setup: "Einrichten", totp_scan: "Trage diesen Schlüssel in deine Authenticator-App ein (z. B. Aegis, Google Authenticator: „Schlüssel eingeben“) und bestätige mit dem ersten Code:",
     totp_enable: "Einschalten", totp_disable: "Ausschalten", totp_enabled: "Zwei-Faktor-Anmeldung ist an.", totp_disabled: "Zwei-Faktor-Anmeldung ist aus.",
@@ -166,6 +170,10 @@ const T = {
     cw_ident: "Morse identification at the end", cw_wpm: "Speed (wpm)",
     st_blocked: "locked", st_stopped: "stopped",
     code: "Code from the authenticator app", tab_practice: "Practice", transcript: "Transcript",
+    ptt_gpio: "GPIO pin (Raspberry Pi)", gpio_pin: "GPIO (BCM number)", gpio_chip: "GPIO chip (empty = automatic)",
+    gpio_active_low: "Active low (transmit when the pin goes to 0)",
+    gpio_found: "Raspberry Pi found: {chip}. GPIO17 is pin 11 of the header. Never wire it to the radio directly; use a transistor or an optocoupler.",
+    gpio_none: "No Raspberry Pi GPIO found here.", gpio_denied: "No access to {chip}: add the user to the group gpio and log in again.",
     totp: "Two-factor login (TOTP)", totp_on: "On: logging in takes the password and a code.", totp_off: "Off.", totp_needs_pw: "Set a password first.",
     totp_setup: "Set up", totp_scan: "Enter this key in your authenticator app (e.g. Aegis, Google Authenticator: “enter a setup key”) and confirm with the first code:",
     totp_enable: "Switch on", totp_disable: "Switch off", totp_enabled: "Two-factor login is on.", totp_disabled: "Two-factor login is off.",
@@ -865,6 +873,10 @@ function renderOutput() {
   $("oGain").value = o.gain_db; $("oMonitor").checked = o.monitor; $("oMonitorGain").value = o.monitor_gain_db;
   $("oPtt").value = o.ptt; $("oSerialPort").value = o.serial_port; $("oSerialLine").value = o.serial_line;
   $("oInvert").checked = o.serial_invert; $("oLead").value = o.ptt_lead_ms; $("oTail").value = o.ptt_tail_ms;
+  $("oGpioPin").value = o.gpio_pin; $("oGpioChip").value = o.gpio_chip; $("oGpioLow").checked = o.gpio_active_low;
+  const chips = state.devices.gpio_chips || [], pi = chips.find(c => c.pi), denied = chips.find(c => c.error);
+  $("oGpioInfo").textContent = pi ? t("gpio_found", {chip: `${pi.path} (${pi.label})`})
+    : denied ? t("gpio_denied", {chip: denied.path}) : t("gpio_none");
   $("oCat").checked = o.cat; $("oRigHost").value = o.rig_host; $("oRigPort").value = o.rig_port; $("oMax").value = o.max_tx_seconds;
   $("oStream").checked = o.stream; $("oStreamHost").value = o.stream_host; $("oStreamPort").value = o.stream_port;
   $("oStreamMount").value = o.stream_mount; $("oStreamBitrate").value = String(o.stream_bitrate); $("oStreamUser").value = o.stream_user;
@@ -880,6 +892,7 @@ function outputVisibility() {
   $("oRadioBox").hidden = !radio; $("oPttBox").hidden = !radio;
   $("oMonitorBox").hidden = !$("oMonitor").checked;
   $("oSerialBox").hidden = $("oPtt").value !== "serial"; $("oInvertBox").hidden = $("oPtt").value !== "serial";
+  $("oGpioBox").hidden = $("oPtt").value !== "gpio";
   $("oCatBox").hidden = !$("oCat").checked;
   $("oStreamBox").hidden = !$("oStream").checked;
 }
@@ -891,6 +904,7 @@ function outputData() {
     monitor: $("oMonitor").checked, monitor_device: $("oMonitorDevice").value, monitor_gain_db: +$("oMonitorGain").value,
     ptt: $("oPtt").value, serial_port: $("oSerialPort").value.trim(), serial_line: $("oSerialLine").value,
     serial_invert: $("oInvert").checked, ptt_lead_ms: +$("oLead").value, ptt_tail_ms: +$("oTail").value,
+    gpio_pin: +$("oGpioPin").value, gpio_chip: $("oGpioChip").value.trim(), gpio_active_low: $("oGpioLow").checked,
     cat: $("oCat").checked, rig_host: $("oRigHost").value.trim(), rig_port: +$("oRigPort").value,
     max_tx_seconds: +$("oMax").value,
     stream: $("oStream").checked, stream_host: $("oStreamHost").value.trim(), stream_port: +$("oStreamPort").value,

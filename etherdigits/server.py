@@ -29,7 +29,7 @@ from . import __version__, otp
 from .auth import (Sessions, Throttle, check_new_password, hash_password, new_totp_secret, totp_uri, verify_password,
                    verify_totp)
 from .groups import GroupError
-from .radio import RIG_MODES, RadioError, Rig, list_devices, serial_ports, validate_output
+from .radio import RIG_MODES, RadioError, Rig, gpio_chips, list_devices, serial_ports, validate_output
 from .groups import random_groups
 from .render import EFFECTS, MELODIES, render, write_wav
 from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso
@@ -582,7 +582,8 @@ async def get_devices(_request: web.Request) -> web.Response:
     except RadioError as exc:
         devices, error = [], str(exc)
     return web.json_response({"devices": devices, "error": error,
-                              "serial_ports": await asyncio.to_thread(serial_ports)})
+                              "serial_ports": await asyncio.to_thread(serial_ports),
+                              "gpio_chips": await asyncio.to_thread(gpio_chips)})
 
 
 async def post_output_test(request: web.Request) -> web.Response:

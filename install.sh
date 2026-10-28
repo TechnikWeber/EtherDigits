@@ -8,7 +8,8 @@
 #   --no-system-packages  do not install PortAudio, ffmpeg and Hamlib (sound card, MP3/stream, CAT)
 #   --with-hamlib         also install Hamlib for CAT control (rigctld)
 #
-# Run it as your normal user; it asks for sudo only to install system packages.
+# Run it as your normal user; it asks for sudo only to install system packages
+# (and, on a Raspberry Pi, to add you to the group gpio for PTT on a GPIO pin).
 # Running it again updates EtherDigits and keeps all data.
 set -euo pipefail
 
@@ -54,6 +55,11 @@ if [ "$SYSTEM" -eq 1 ]; then
     [ "$HAMLIB" -eq 1 ] && { sudo dnf install -y hamlib || warn "Hamlib was not installed"; }
   else
     warn "unknown package manager; install Python 3.10+, git, PortAudio and ffmpeg yourself"
+  fi
+  # Raspberry Pi: PTT on a GPIO pin needs the group gpio.
+  if [ -r /proc/device-tree/model ] && grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null \
+     && getent group gpio >/dev/null && ! id -nG | grep -qw gpio; then
+    sudo usermod -aG gpio "$USER" && warn "added $USER to the group gpio; log out and in again before using GPIO PTT"
   fi
 fi
 

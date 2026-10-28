@@ -20,7 +20,9 @@ import asyncio
 import logging
 import math
 import queue
+import re
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -32,7 +34,7 @@ from .voicepack import resample
 log = logging.getLogger("etherdigits.radio")
 
 MODES = ("silent", "soundcard")
-PTTS = ("none", "serial", "cat")
+PTTS = ("none", "serial", "cat", "gpio")
 SERIAL_LINES = ("rts", "dtr", "both")
 RIG_MODES = ("", "AM", "USB", "LSB", "FM", "CW", "PKTUSB", "PKTLSB")
 BLOCK = 1024
@@ -49,6 +51,9 @@ OUTPUT_DEFAULTS: dict = {
     "serial_port": "",
     "serial_line": "rts",
     "serial_invert": False,
+    "gpio_pin": 17,            # BCM number, i.e. GPIO17 = pin 11 of the header
+    "gpio_active_low": False,
+    "gpio_chip": "",           # "" = find the Raspberry Pi's header chip
     "cat": False,              # set frequency and mode through rigctld
     "rig_host": "127.0.0.1",
     "rig_port": 4532,
@@ -104,6 +109,8 @@ def validate_output(changes: dict, current: dict | None = None) -> dict:
         (10 <= cfg["max_tx_seconds"] <= 7200, "transmit limit: 10 to 7200 seconds"),
         (cfg["ptt"] != "serial" or cfg["serial_port"], "serial PTT needs a serial port"),
         (cfg["ptt"] != "cat" or cfg["cat"], "PTT via CAT needs CAT switched on"),
+        (0 <= cfg["gpio_pin"] <= 53, "GPIO pin: a BCM number from 0 to 53"),
+        (cfg["gpio_chip"] == "" or re.fullmatch(r"/dev/gpiochip\d{1,2}", cfg["gpio_chip"]), "GPIO chip: empty or /dev/gpiochipN"),
         (1 <= cfg["stream_port"] <= 65535, "stream port must be between 1 and 65535"),
         (cfg["stream_mount"].startswith("/") and " " not in cfg["stream_mount"], "the mount point starts with /, e.g. /etherdigits.mp3"),
         (cfg["stream_bitrate"] in (32, 48, 64, 96, 128), "stream bit rate: 32, 48, 64, 96 or 128 kbit/s"),
@@ -278,7 +285,19 @@ def make_ptt(cfg: dict):
         return SerialPTT(cfg["serial_port"], cfg["serial_line"], cfg["serial_invert"])
     if cfg["ptt"] == "cat":
         return CatPTT(Rig(cfg["rig_host"], cfg["rig_port"]))
+    if cfg["ptt"] == "gpio":
+        if not sys.platform.startswith("linux"):
+            raise RadioError("GPIO PTT works on Linux only (Raspberry Pi)")
+        from .gpio import GpioPTT
+        return GpioPTT(cfg["gpio_pin"], cfg["gpio_active_low"], cfg["gpio_chip"])
     return NoPTT()
+
+
+def gpio_chips() -> list[dict]:
+    if not sys.platform.startswith("linux"):
+        return []
+    from .gpio import list_chips
+    return list_chips()
 
 
 # --- sound devices ---------------------------------------------------------------
