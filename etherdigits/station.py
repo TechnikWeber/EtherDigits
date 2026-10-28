@@ -90,7 +90,8 @@ class Station:
         fmt = schedule.station_format()
         if test:
             return Planned(schedule, "test", Transmission([random_groups(10)], fmt))
-        due = self.store.due(schedule.id, iso(now or self.clock()), schedule.max_messages)
+        due = self.store.due(schedule.id, iso(now or self.clock()), schedule.max_messages,
+                             agent_id=schedule.agent_id, expire_messages=False)
         if due:
             return Planned(schedule, "message", Transmission([m.groups for m in due], fmt), [m.id for m in due])
         if schedule.filler == "skip":
@@ -129,6 +130,7 @@ class Station:
         async with self._lock:
             started = at or self.clock()
             planned = None
+            saved_schedule = self.store.schedule(schedule.id)
             try:
                 planned = self.plan(schedule, started, test=test)
                 if planned is None:
@@ -147,6 +149,12 @@ class Station:
                         await asyncio.sleep(wait)
                 if self.store.get("tx_blocked"):
                     return self._log_skip(schedule, started, "blocked", "the transmitter is locked (emergency stop)")
+                if saved_schedule is not None and self.store.schedule(schedule.id) != saved_schedule:
+                    return self._log_skip(schedule, started, "stopped", "the schedule changed during preparation")
+                for mid in planned.message_ids:
+                    message = self.store.message(mid)
+                    if message is None or message.status != "queued" or message.agent_id != schedule.agent_id:
+                        return self._log_skip(schedule, started, "stopped", "a queued delivery changed during preparation")
                 started = self.clock()
                 self.current = {"schedule": schedule.name, "schedule_id": schedule.id, "started": iso(started),
                                 "duration": round(seconds, 1)}
@@ -261,6 +269,7 @@ class Station:
             self.replan(now)
         lead = timedelta(seconds=int(self.store.get("lead_seconds")))
         started = []
+        ready = []
         schedules = {s.id: s for s in self.store.schedules()}
         for sid, slot in list(self.next_runs.items()):
             schedule = schedules.get(sid)
@@ -270,6 +279,16 @@ class Station:
                 self.next_runs[sid] = schedule.next_run(slot)
                 if slot < now - timedelta(seconds=5):
                     continue  # the machine slept through it; never send late
+                ready.append((slot, schedule))
+        if ready:
+            last_sent = self.store.last_transmissions()
+            # Slots stay on time. At a shared slot, real traffic beats filler;
+            # among equally ready schedules the least recently sent wins.
+            ready.sort(key=lambda item: (
+                item[0], not bool(self.store.due(item[1].id, iso(item[0]), 1, expire_messages=False)),
+                last_sent.get(item[1].id, 0), item[1].id,
+            ))
+            for slot, schedule in ready:
                 started.append(self.spawn(self.transmit(schedule, at=slot)))
         if self._last_housekeeping is None or now - self._last_housekeeping >= timedelta(minutes=1):
             self._last_housekeeping = now

@@ -30,7 +30,8 @@ END
 | ![Log with transcript and recording of every transmission](docs/screenshots/log.jpg) | ![Settings: sound card, monitor on the station computer, PTT, CAT](docs/screenshots/settings.jpg) |
 | ![Listening practice: random groups to copy by ear, checked group by group](docs/screenshots/practice.jpg) | ![The offline pad tool: a message on the left, the groups to send on the right](docs/screenshots/pad-tool.jpg) |
 
-> Version 0.5: everything in the [plan](docs/plan.md) is built. The radio
+> Version 0.7 adds agents with individual schedules and multi-recipient messages.
+> Everything in the [plan](docs/plan.md) is built. The radio
 > output (sound card, PTT, CAT, GPIO) has not been tried with a real radio yet.
 
 ## Quick start
@@ -116,7 +117,8 @@ Set up the output under Settings.
 | Tab | What it does |
 |---|---|
 | Overview | on air or ready with a live level meter, the next transmissions in UTC and local time, the queue, emergency stop |
-| Messages | hand in digit groups: priority, number of transmissions, schedule, not before, expiry, delete after sending |
+| Messages | hand in digit groups to one or several agents: priority, number of transmissions per recipient, schedule, not before, expiry, delete after sending |
+| Agents | manage recipients and their own schedules; each agent can have several time windows, transmission intervals and radio frequencies |
 | Schedules | fixed times on chosen weekdays, or every N minutes around the clock or in a window such as 18:00–19:00; UTC or a local time zone; voice, callsign, frequency, filler, the whole transmission layout; listen to a preview, transmit now |
 | Log | every transmission with its transcript and recording |
 | Practice | random groups to copy by ear, checked group by group |
@@ -193,9 +195,45 @@ curl -X POST http://station:8472/api/submit \
 ```
 
 Fields: `groups` (required), `priority` (0 normal, 1 high, 2 urgent),
-`transmissions`, `schedule_id`, `not_before` / `expires` (ISO time, UTC) or
+`transmissions`, `schedule_id`, `agent_id` or `agent_ids`, `not_before` / `expires` (ISO time, UTC) or
 `expires_minutes`, `burn` (default true: digits are deleted from the station
 after the last transmission).
+
+**Several agents.** Under **Agents**, create each recipient and add their
+schedules. For example, Agent A can receive every 15 minutes from 13:00–14:00,
+and Agent B every 30 minutes from 18:00–19:00, both in Europe/Berlin. Set weekdays,
+fixed times or windows, voice, callsign, radio frequency and mode per schedule.
+Add more schedules for different windows or weekdays. Frequency changes require
+CAT to be enabled under Settings.
+
+Under **Messages**, select one or more agents. Each selected agent gets an
+independent queue entry, sent only on that agent's schedules, with its own
+repeat count and deletion after sending. Without a recipient, messages use
+general schedules. An agent with no active schedule keeps their messages queued.
+Deleting an agent removes their schedules and cancels their queued messages;
+deleting just a schedule leaves messages assigned to the same agent.
+
+**Conflicting slots.** One transmitter can send only one schedule at a time.
+The Agents and Schedules tabs warn about identical start times in the next eight
+days. At a shared slot, queued messages take precedence over filler; equally
+ready schedules take turns, using the last successful transmission order even
+after a restart. The other slot is logged as busy and its messages remain queued.
+For reliable reception, give agents separate times and allow for the length of
+each transmission. The warning checks start times, not audio duration.
+
+The API accepts `"agent_ids": [1, 2]` for the same groups sent to several
+recipients, returning `{"messages": [{"id": ..., "groups": ...}, ...]}` from
+`/api/submit`. Omit `schedule_id` for multiple recipients so each uses their own
+schedules. Single-message submissions keep their existing response format.
+Agent IDs are listed by the authenticated admin endpoint `GET /api/agents`.
+
+All recipients of identical encrypted groups need the matching pad. With
+separate pads, encrypt and submit the message separately for each agent.
+
+Upgrading from earlier versions keeps existing schedules and messages. Message
+IDs are no longer reused after deletion; cancelled messages cannot be marked as
+sent by a transmission that was already running. Invalid message settings are
+rejected before a page of a station-held pad is consumed.
 
 The data folder holds the database, recordings and pads:
 `~/.local/share/etherdigits` on Linux, `%APPDATA%\EtherDigits` on Windows,

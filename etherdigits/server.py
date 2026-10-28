@@ -32,7 +32,7 @@ from .groups import GroupError
 from .radio import RIG_MODES, RadioError, Rig, gpio_chips, list_devices, serial_ports, validate_output
 from .groups import random_groups
 from .render import EFFECTS, MELODIES, render, write_wav
-from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso, time_zones
+from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso, schedule_conflicts, time_zones
 from .script import INTERVALS, Format, Transmission, build_script
 from .station import Station
 from .store import PRIORITIES, Store, StoreError
@@ -277,12 +277,15 @@ def schedule_json(schedule: Schedule, station: Station) -> dict:
 
 async def get_schedules(request: web.Request) -> web.Response:
     station = request.app[STATION]
-    return web.json_response([schedule_json(s, station) for s in request.app[STORE].schedules()])
+    schedules = request.app[STORE].schedules()
+    conflicts = schedule_conflicts(schedules, station.clock())
+    return web.json_response([{**schedule_json(s, station), "conflicts": conflicts.get(s.id, [])} for s in schedules])
 
 
 def schedule_from(data: dict, schedule_id: int | None) -> Schedule:
     data = dict(data)
     data.pop("upcoming", None)
+    data.pop("conflicts", None)
     data["id"] = schedule_id
     schedule = Schedule.from_dict(data)
     find_pack(schedule.voice)  # raises VoicePackError, answered with 400
@@ -377,40 +380,65 @@ async def post_transmit(request: web.Request) -> web.Response:
     return web.json_response({"ok": True}, status=202)
 
 
+# --- agents --------------------------------------------------------------------
+
+async def get_agents(request: web.Request) -> web.Response:
+    return web.json_response(request.app[STORE].agents())
+
+
+async def post_agent(request: web.Request) -> web.Response:
+    agent = request.app[STORE].save_agent((await body(request)).get("name"))
+    return web.json_response(agent, status=201)
+
+
+async def put_agent(request: web.Request) -> web.Response:
+    if request.app[STORE].agent(int_arg(request)) is None:
+        raise ApiError(404, "agent not found")
+    agent = request.app[STORE].save_agent((await body(request)).get("name"), int_arg(request))
+    return web.json_response(agent)
+
+
+async def delete_agent(request: web.Request) -> web.Response:
+    if not request.app[STORE].delete_agent(int_arg(request)):
+        raise ApiError(404, "agent not found")
+    return web.json_response({"ok": True})
+
+
 # --- messages ------------------------------------------------------------------
 
 def message_args(data: dict, store: Store, data_dir: Path, source: str, now: datetime) -> dict:
-    groups = data.get("groups")
-    text = data.get("text")
-    if text:
-        if not store.get("station_encryption"):
-            raise ApiError(403, "encrypting on the station is switched off in the settings")
-        groups = encrypt_on_station(str(text), str(data.get("pad", "")), data_dir)
-    if not groups:
-        raise ApiError(400, "groups (or text and pad) are needed")
-    expires = data.get("expires")
-    if data.get("expires_minutes"):
-        try:
-            minutes = int(data["expires_minutes"])
-        except (TypeError, ValueError):
-            raise ApiError(400, "expires_minutes must be a whole number")
-        if not 1 <= minutes <= 60 * 24 * 365:
-            raise ApiError(400, "expires_minutes must be between 1 and 525600")
-        expires = iso(now + timedelta(minutes=minutes))
     def as_int(name: str, default):
         value = data.get(name, default)
         if value is None or value == "":
             return default
-        if isinstance(value, bool):
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
             raise ApiError(400, f"{name} must be a whole number")
         try:
             return int(value)
         except (TypeError, ValueError):
             raise ApiError(400, f"{name} must be a whole number")
-    return dict(groups=groups, label=str(data.get("label", ""))[:80], priority=as_int("priority", 0),
+    text = data.get("text")
+    if text and not store.get("station_encryption"):
+        raise ApiError(403, "encrypting on the station is switched off in the settings")
+    groups = "00000" if text else data.get("groups")  # validate options before touching a pad
+    if not groups:
+        raise ApiError(400, "groups (or text and pad) are needed")
+    expires = data.get("expires")
+    minutes = as_int("expires_minutes", None)
+    if minutes is not None:
+        if not 1 <= minutes <= 60 * 24 * 365:
+            raise ApiError(400, "expires_minutes must be between 1 and 525600")
+        expires = iso(now + timedelta(minutes=minutes))
+    args = dict(groups=groups, label=str(data.get("label", ""))[:80], priority=as_int("priority", 0),
+                agent_id=data.get("agent_id"),
                 schedule_id=as_int("schedule_id", None), not_before=data.get("not_before") or None,
                 expires=expires or None, transmissions=as_int("transmissions", 1),
                 burn=bool(data.get("burn", True)), source=source)
+    args = store.validate_message(**args)
+    if text:
+        args["groups"] = encrypt_on_station(str(text), str(data.get("pad", "")), data_dir,
+            validate=lambda groups: store.validate_message(**{**args, "groups": groups}))
+    return args
 
 
 def pad_path(data_dir: Path, name: str) -> Path:
@@ -422,12 +450,14 @@ def pad_path(data_dir: Path, name: str) -> Path:
 _pad_lock = asyncio.Lock()
 
 
-def encrypt_on_station(text: str, name: str, data_dir: Path) -> list[str]:
+def encrypt_on_station(text: str, name: str, data_dir: Path, *, validate=None) -> list[str]:
     path = pad_path(data_dir, name)
     if not path.is_file():
         raise ApiError(400, f"pad {name!r} is not on the station")
     pad = otp.load_pad(path)
     groups = otp.encrypt(text, pad)
+    if validate is not None:
+        validate(groups)
     otp.save_pad(pad, path)  # the used page is recorded before the plain text is forgotten
     return groups
 
@@ -439,10 +469,39 @@ async def get_messages(request: web.Request) -> web.Response:
 
 async def post_message(request: web.Request) -> web.Response:
     data = await body(request)
+    messages = await queue_messages(request, data, "ui")
+    result = {"messages": [m.to_dict() for m in messages]} if "agent_ids" in data else messages[0].to_dict()
+    return web.json_response(result, status=201)
+
+
+async def queue_messages(request: web.Request, data: dict, source: str) -> list:
+    store = request.app[STORE]
+    # Validate routing before consuming an encryption pad page.
+    if "agent_ids" in data:
+        recipients = store.validate_recipients(data["agent_ids"])
+        if data.get("agent_id") is not None:
+            raise StoreError("use agent_id or agent_ids, not both")
+        if len(recipients) > 1 and data.get("schedule_id") not in (None, ""):
+            raise StoreError("multiple agents use their own schedules; leave schedule_id empty")
+    else:
+        recipients = [data.get("agent_id")]
+        if recipients[0] is not None:
+            store.validate_recipients(recipients)
+    if data.get("schedule_id") not in (None, ""):
+        try:
+            schedule = store.schedule(int(data["schedule_id"]))
+        except (TypeError, ValueError):
+            raise StoreError("schedule_id must be a whole number")
+        if schedule is None:
+            raise StoreError("schedule not found")
+        if recipients[0] is not None and schedule.agent_id != recipients[0]:
+            raise StoreError("the schedule belongs to a different agent")
     async with _pad_lock:
-        args = message_args(data, request.app[STORE], request.app[DATA], "ui", request.app[STATION].clock())
-    message = request.app[STORE].add_message(**args)
-    return web.json_response(message.to_dict(), status=201)
+        args = message_args(data, store, request.app[DATA], source, request.app[STATION].clock())
+        if "agent_ids" in data:
+            args.pop("agent_id", None)  # the validated schedule may have inferred the single recipient
+            return store.add_messages(**args, agent_ids=recipients)
+        return [store.add_message(**args)]
 
 
 async def post_cancel(request: web.Request) -> web.Response:
@@ -461,11 +520,9 @@ async def post_submit(request: web.Request) -> web.Response:
     """Remote submission with an API token. The answer reveals nothing about the queue."""
     data = await body(request)
     token = request["token"]
-    async with _pad_lock:
-        args = message_args(data, request.app[STORE], request.app[DATA], f"api:{token['name']}",
-                            request.app[STATION].clock())
-    message = request.app[STORE].add_message(**args)
-    return web.json_response({"id": message.id, "groups": message.group_count}, status=201)
+    messages = await queue_messages(request, data, f"api:{token['name']}")
+    result = [{"id": m.id, "groups": m.group_count} for m in messages]
+    return web.json_response({"messages": result} if "agent_ids" in data else result[0], status=201)
 
 
 # --- log -------------------------------------------------------------------------
@@ -661,6 +718,10 @@ def make_app(store: Store, station: Station, data_dir: Path, run_station: bool =
     r.add_post("/api/totp/disable", post_totp_disable)
     r.add_get("/api/status", get_status)
     r.add_get("/api/voices", get_voices)
+    r.add_get("/api/agents", get_agents)
+    r.add_post("/api/agents", post_agent)
+    r.add_put("/api/agents/{id}", put_agent)
+    r.add_delete("/api/agents/{id}", delete_agent)
     r.add_get("/api/schedules", get_schedules)
     r.add_post("/api/schedules", post_schedule)
     r.add_post("/api/preview", post_preview)

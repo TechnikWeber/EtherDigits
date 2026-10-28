@@ -18,17 +18,16 @@ from pathlib import Path
 from .groups import GroupError, parse_groups
 from .schedule import Schedule, ScheduleError, iso, parse_iso, utcnow
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY, data TEXT NOT NULL);
+MESSAGE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     created TEXT NOT NULL,
     groups TEXT,                    -- NULL once burned
     group_count INTEGER NOT NULL,
     label TEXT NOT NULL DEFAULT '',
     priority INTEGER NOT NULL DEFAULT 0,
     schedule_id INTEGER,            -- NULL: any schedule
+    agent_id INTEGER,               -- NULL: general traffic; otherwise only this agent's schedules
     not_before TEXT,
     expires TEXT,
     transmissions INTEGER NOT NULL DEFAULT 1,
@@ -38,6 +37,12 @@ CREATE TABLE IF NOT EXISTS messages (
     source TEXT NOT NULL DEFAULT 'ui',
     last_sent TEXT
 );
+"""
+
+SCHEMA = MESSAGE_SCHEMA + """
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS messages_queue ON messages (status, priority DESC, created);
 CREATE TABLE IF NOT EXISTS log (
     id INTEGER PRIMARY KEY,
@@ -95,6 +100,7 @@ class Message:
     burn: bool
     source: str
     last_sent: str | None
+    agent_id: int | None = None
 
     def to_dict(self, with_groups: bool = True) -> dict:
         d = dict(self.__dict__)
@@ -110,6 +116,7 @@ def _message(row: sqlite3.Row) -> Message:
         schedule_id=row["schedule_id"], not_before=row["not_before"], expires=row["expires"],
         transmissions=row["transmissions"], sent_count=row["sent_count"], status=row["status"],
         burn=bool(row["burn"]), source=row["source"], last_sent=row["last_sent"],
+        agent_id=row["agent_id"],
     )
 
 
@@ -128,6 +135,22 @@ class Store:
                 self._db.execute("PRAGMA journal_mode=WAL")
             self._db.execute("PRAGMA foreign_keys=ON")
             self._db.executescript(SCHEMA)
+            if "agent_id" not in {r["name"] for r in self._db.execute("PRAGMA table_info(messages)")}:
+                self._db.execute("ALTER TABLE messages ADD COLUMN agent_id INTEGER")
+            definition = self._db.execute("SELECT sql FROM sqlite_master WHERE name = 'messages'").fetchone()[0]
+            if "AUTOINCREMENT" not in definition.upper():
+                self._db.execute("BEGIN")
+                try:
+                    self._db.execute("ALTER TABLE messages RENAME TO messages_legacy")
+                    self._db.execute(MESSAGE_SCHEMA)
+                    columns = ", ".join(row["name"] for row in self._db.execute("PRAGMA table_info(messages)"))
+                    self._db.execute(f"INSERT INTO messages ({columns}) SELECT {columns} FROM messages_legacy")
+                    self._db.execute("DROP TABLE messages_legacy")
+                    self._db.execute("CREATE INDEX messages_queue ON messages (status, priority DESC, created)")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
         self.version = 0  # bumped whenever schedules change, so the scheduler can replan
 
     def close(self) -> None:
@@ -184,6 +207,54 @@ class Store:
             self.set(key, value)
         return self.settings()
 
+    # --- agents ------------------------------------------------------------
+
+    def agents(self) -> list[dict]:
+        return [dict(r) for r in self._q("SELECT id, name FROM agents ORDER BY id")]
+
+    def agent(self, agent_id: int) -> dict | None:
+        rows = self._q("SELECT id, name FROM agents WHERE id = ?", (agent_id,))
+        return dict(rows[0]) if rows else None
+
+    def save_agent(self, name: str, agent_id: int | None = None) -> dict:
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 60:
+            raise StoreError("the agent needs a name of 1 to 60 characters")
+        if agent_id is None:
+            agent_id = self._x("INSERT INTO agents (name) VALUES (?)", (name.strip(),))
+        elif not self._x("UPDATE agents SET name = ? WHERE id = ?", (name.strip(), agent_id)):
+            raise StoreError("agent not found")
+        return self.agent(agent_id)
+
+    def delete_agent(self, agent_id: int) -> bool:
+        with self._lock:
+            if self.agent(agent_id) is None:
+                return False
+            self._db.execute("BEGIN")
+            try:
+                # Keep historical recipient ids; never reroute cancelled traffic to another agent.
+                self._x("UPDATE messages SET status = 'cancelled', groups = CASE WHEN burn = 1 THEN NULL ELSE groups END"
+                        " WHERE agent_id = ? AND status = 'queued'", (agent_id,))
+                for schedule in self.schedules():
+                    if schedule.agent_id == agent_id:
+                        self.delete_schedule(schedule.id)
+                self._x("DELETE FROM agents WHERE id = ?", (agent_id,))
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+        self.version += 1
+        return True
+
+    def validate_recipients(self, agent_ids: list[int]) -> list[int]:
+        if not isinstance(agent_ids, list) or not 1 <= len(agent_ids) <= 100:
+            raise StoreError("select between 1 and 100 agents")
+        if any(type(aid) is not int or aid < 1 for aid in agent_ids):
+            raise StoreError("agent ids must be positive whole numbers")
+        for aid in agent_ids:
+            if self.agent(aid) is None:
+                raise StoreError(f"agent {aid} does not exist")
+        return list(dict.fromkeys(agent_ids))
+
     # --- schedules ---------------------------------------------------------
 
     def schedules(self) -> list[Schedule]:
@@ -202,6 +273,12 @@ class Store:
 
     def save_schedule(self, schedule: Schedule) -> Schedule:
         schedule.validate()
+        if schedule.agent_id is not None:
+            self.validate_recipients([schedule.agent_id])
+        old = self.schedule(schedule.id) if schedule.id is not None else None
+        if old and old.agent_id != schedule.agent_id and self._q(
+                "SELECT id FROM messages WHERE schedule_id = ? AND status = 'queued' LIMIT 1", (schedule.id,)):
+            raise StoreError("cancel queued messages for this schedule before changing its agent")
         data = schedule.to_dict()
         data.pop("id")
         if schedule.id is None:
@@ -213,7 +290,7 @@ class Store:
 
     def delete_schedule(self, schedule_id: int) -> bool:
         with self._lock:
-            # Messages bound to this schedule fall back to "any schedule".
+            # Fall back to any schedule for the SAME recipient (or general traffic).
             self._x("UPDATE messages SET schedule_id = NULL WHERE schedule_id = ?", (schedule_id,))
             done = bool(self._x("DELETE FROM schedules WHERE id = ?", (schedule_id,)))
         self.version += 1
@@ -221,9 +298,11 @@ class Store:
 
     # --- messages ----------------------------------------------------------
 
-    def add_message(self, groups: list[str] | str, *, label: str = "", priority: int = 0,
-                    schedule_id: int | None = None, not_before: str | None = None, expires: str | None = None,
-                    transmissions: int = 1, burn: bool = True, source: str = "ui") -> Message:
+    def validate_message(self, groups: list[str] | str, *, label: str = "", priority: int = 0,
+                         schedule_id: int | None = None, not_before: str | None = None, expires: str | None = None,
+                         transmissions: int = 1, burn: bool = True, source: str = "ui",
+                         agent_id: int | None = None) -> dict:
+        """Normalize a submission without storing it or consuming encryption keys."""
         if isinstance(groups, str):
             try:
                 groups = parse_groups(groups)
@@ -231,29 +310,67 @@ class Store:
                 raise StoreError(str(exc)) from exc
         if not groups:
             raise StoreError("the message is empty")
-        if any(len(g) != 5 or not (g.isdigit() and g.isascii()) for g in groups):
+        if not isinstance(groups, list) or any(not isinstance(g, str) or len(g) != 5
+                                               or not (g.isdigit() and g.isascii()) for g in groups):
             raise StoreError("every group must have five digits")
         if len(groups) > 500:
             raise StoreError("at most 500 groups per message")
-        if priority not in PRIORITIES:
+        if type(priority) is not int or priority not in PRIORITIES:
             raise StoreError("priority must be 0 (normal), 1 (high) or 2 (urgent)")
-        if not isinstance(transmissions, int) or not 1 <= transmissions <= 100:
+        if type(transmissions) is not int or not 1 <= transmissions <= 100:
             raise StoreError("transmissions must be between 1 and 100")
-        if schedule_id is not None and self.schedule(schedule_id) is None:
-            raise StoreError(f"schedule {schedule_id} does not exist")
+        if schedule_id is not None:
+            if type(schedule_id) is not int or schedule_id < 1:
+                raise StoreError("schedule_id must be a positive whole number")
+            schedule = self.schedule(schedule_id)
+            if schedule is None:
+                raise StoreError(f"schedule {schedule_id} does not exist")
+            if agent_id is None:
+                agent_id = schedule.agent_id
+            elif schedule.agent_id != agent_id:
+                raise StoreError("the schedule belongs to a different agent")
+        if agent_id is not None:
+            self.validate_recipients([agent_id])
+        if any(value is not None and not isinstance(value, str) for value in (not_before, expires)):
+            raise StoreError("not_before and expires must be ISO date strings")
         try:
             nb, ex = parse_iso(not_before), parse_iso(expires)
         except ScheduleError as exc:
             raise StoreError(str(exc)) from exc
         if nb and ex and ex <= nb:
             raise StoreError("the message would expire before it may be sent")
+        return dict(groups=groups, label=str(label or "")[:80], priority=priority, schedule_id=schedule_id,
+                    not_before=iso(nb), expires=iso(ex), transmissions=transmissions, burn=bool(burn),
+                    source=str(source)[:60], agent_id=agent_id)
+
+    def add_message(self, groups: list[str] | str, **kwargs) -> Message:
+        args = self.validate_message(groups, **kwargs)
         mid = self._x(
             "INSERT INTO messages (created, groups, group_count, label, priority, schedule_id, not_before, expires,"
-            " transmissions, burn, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (iso(utcnow()), " ".join(groups), len(groups), (label or "")[:80], priority, schedule_id,
-             iso(nb), iso(ex), transmissions, int(bool(burn)), source[:60]),
+            " transmissions, burn, source, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (iso(utcnow()), " ".join(args["groups"]), len(args["groups"]), args["label"], args["priority"],
+             args["schedule_id"], args["not_before"], args["expires"], args["transmissions"], int(args["burn"]),
+             args["source"], args["agent_id"]),
         )
         return self.message(mid)
+
+    def add_messages(self, groups: list[str] | str, *, agent_ids: list[int], **kwargs) -> list[Message]:
+        """One independent delivery per recipient, committed together or not at all."""
+        with self._lock:
+            recipients = self.validate_recipients(agent_ids)
+            if kwargs.get("agent_id") is not None:
+                raise StoreError("use agent_id or agent_ids, not both")
+            kwargs.pop("agent_id", None)
+            if len(recipients) > 1 and kwargs.get("schedule_id") is not None:
+                raise StoreError("multiple agents use their own schedules; leave schedule_id empty")
+            self._db.execute("BEGIN")
+            try:
+                messages = [self.add_message(groups, agent_id=aid, **kwargs) for aid in recipients]
+                self._db.execute("COMMIT")
+                return messages
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
 
     def message(self, message_id: int) -> Message | None:
         rows = self._q("SELECT * FROM messages WHERE id = ?", (message_id,))
@@ -275,23 +392,31 @@ class Store:
             self._x("UPDATE messages SET groups = NULL WHERE status = 'expired' AND burn = 1")
         return n
 
-    def due(self, schedule_id: int, now: str, limit: int) -> list[Message]:
+    def due(self, schedule_id: int, now: str, limit: int, *, agent_id: int | None = None,
+            expire_messages: bool = True) -> list[Message]:
         """Messages a transmission of this schedule should carry, most important first."""
-        self.expire(now)
+        if expire_messages:
+            self.expire(now)
+        schedule = self.schedule(schedule_id)
+        if schedule is not None:
+            agent_id = schedule.agent_id
         rows = self._q(
             "SELECT * FROM messages WHERE status = 'queued' AND groups IS NOT NULL"
+            " AND agent_id IS ?"
+            " AND (expires IS NULL OR expires > ?)"
             " AND (schedule_id IS NULL OR schedule_id = ?) AND (not_before IS NULL OR not_before <= ?)"
             " ORDER BY priority DESC, created, id LIMIT ?",
-            (schedule_id, now, limit),
+            (agent_id, now, schedule_id, now, limit),
         )
         return [_message(r) for r in rows]
 
     def mark_sent(self, message_ids: list[int], when: str) -> None:
         with self._lock:
             for mid in message_ids:
-                self._x("UPDATE messages SET sent_count = sent_count + 1, last_sent = ? WHERE id = ?", (when, mid))
-                self._x("UPDATE messages SET status = 'done' WHERE id = ? AND sent_count >= transmissions", (mid,))
-            self._x("UPDATE messages SET groups = NULL WHERE status = 'done' AND burn = 1")
+                self._x("UPDATE messages SET sent_count = sent_count + 1, last_sent = ?,"
+                        " status = CASE WHEN sent_count + 1 >= transmissions THEN 'done' ELSE 'queued' END,"
+                        " groups = CASE WHEN burn = 1 AND sent_count + 1 >= transmissions THEN NULL ELSE groups END"
+                        " WHERE id = ? AND status = 'queued'", (when, mid))
 
     def cancel_message(self, message_id: int) -> bool:
         with self._lock:
@@ -308,6 +433,11 @@ class Store:
         return self._q("SELECT COUNT(*) AS n FROM messages WHERE status = 'queued'")[0]["n"]
 
     # --- log ---------------------------------------------------------------
+
+    def last_transmissions(self) -> dict[int, int]:
+        """Successful transmission order, persisted for fair scheduling across restarts."""
+        return {r["schedule_id"]: r["last"] for r in self._q(
+            "SELECT schedule_id, MAX(id) AS last FROM log WHERE status = 'ok' GROUP BY schedule_id")}
 
     def add_log(self, **entry) -> int:
         cols = ["started", "duration", "schedule_id", "schedule_name", "kind", "message_ids", "transcript",

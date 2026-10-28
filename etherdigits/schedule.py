@@ -58,6 +58,7 @@ class Schedule:
     timezone: str = "UTC"                     # IANA name, e.g. Europe/Berlin
     frequency_khz: float = 0.0                # 0 = leave the radio as it is (needs CAT)
     rig_mode: str = ""                        # e.g. AM, USB; "" = leave as it is
+    agent_id: int | None = None               # NULL: general station traffic
 
     def validate(self) -> "Schedule":
         self.name = (self.name or "").strip()[:60]
@@ -71,6 +72,8 @@ class Schedule:
             raise ScheduleError("times and weekdays must be lists, format an object")
         if not self.name:
             raise ScheduleError("the schedule needs a name")
+        if self.agent_id is not None and (type(self.agent_id) is not int or self.agent_id < 1):
+            raise ScheduleError("agent_id must be a positive whole number")
         if self.kind not in KINDS:
             raise ScheduleError(f"kind must be one of {', '.join(KINDS)}")
         self.times = sorted({str(t).strip() for t in self.times if str(t).strip()})
@@ -190,6 +193,29 @@ class Schedule:
                 break
             runs.append(t)
         return runs
+
+
+def schedule_conflicts(schedules: list[Schedule], after: datetime, days: int = 8) -> dict[int, list[dict]]:
+    """First shared start per pair in the next eight days, compared in UTC.
+
+    This detects coincident starts, not overlaps caused by transmission length.
+    """
+    active = [s for s in schedules if s.enabled and s.id is not None]
+    if len(active) < 2:
+        return {}
+    end = after + timedelta(days=days)
+    slots: dict[datetime, list[Schedule]] = {}
+    conflicts: dict[int, dict[int, dict]] = {}
+    for schedule in active:
+        at = schedule.next_run(after)
+        while at is not None and at <= end:
+            for other in slots.get(at, []):
+                for a, b in ((schedule, other), (other, schedule)):
+                    conflicts.setdefault(a.id, {}).setdefault(b.id,
+                        {"schedule_id": b.id, "name": b.name, "at": iso(at)})
+            slots.setdefault(at, []).append(schedule)
+            at = schedule.next_run(at)
+    return {sid: list(others.values()) for sid, others in conflicts.items()}
 
 
 def _minutes(text: str) -> int:

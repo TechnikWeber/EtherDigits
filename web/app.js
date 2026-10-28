@@ -3,6 +3,18 @@
 // ---------------------------------------------------------------- texts
 const T = {
   de: {
+    tab_agents: "Agenten", agent: "Agent", agent_name: "Name des Agenten", new_agent: "Agent anlegen",
+    agents_hint: "Lege deine Freunde als Agenten an. Jeder Agent kann mehrere Zeitpläne mit eigenen Uhrzeiten, Zeitfenstern, Wochentagen, Sendeabständen und Funkfrequenzen haben.",
+    no_agents: "Noch keine Agenten. Lege sie unter Agenten an.", no_agent: "Allgemeiner Versand (ohne Agent)",
+    no_agent_schedule: "Noch kein aktiver Zeitplan. Nachrichten warten, bis ein Zeitplan aktiv ist.",
+    schedule_agent_hint: "Dieser Zeitplan sendet nur Nachrichten für den ausgewählten Agenten. Ohne Agent sendet er allgemeine Nachrichten.",
+    recipients: "Empfänger (Agenten)", recipients_hint: "Mehrere Agenten auswählen: Jeder erhält eine eigene Kopie zu seinen Sendezeiten. Ohne Auswahl erfolgt allgemeiner Versand.",
+    recipients_pad_hint: "Alle ausgewählten Agenten brauchen eine Kopie des passenden Schlüsselhefts. Bei verschiedenen Heften die Nachricht für jeden Agenten separat verschlüsseln und einreichen.",
+    agent_schedules: "Zeitpläne des Agenten", own_schedules: "Jeweilige Zeitpläne der Agenten",
+    queued_many: "{n} Nachrichten warten auf die jeweiligen Sendezeiten.", deleted_agent: "Gelöschter Agent #{id}",
+    delete_agent_confirm: "Agent „{name}“ und seine Zeitpläne löschen? Seine wartenden Nachrichten werden abgebrochen.",
+    agent_saved: "Agent gespeichert.", agent_deleted: "Agent gelöscht; seine wartenden Nachrichten wurden abgebrochen.",
+    schedule_conflict: "Gleicher Sendetermin in den nächsten 8 Tagen mit: {names}. Nur ein Zeitplan kann gleichzeitig senden. Nachrichten haben Vorrang vor Füllmeldungen; bei Gleichstand wechseln sich die Zeitpläne ab. Für zuverlässigen Empfang getrennte Zeiten wählen und die Sendelänge berücksichtigen.",
     logout: "Abmelden", login: "Anmelden", password: "Passwort",
     tab_overview: "Übersicht", tab_messages: "Nachrichten", tab_schedules: "Zeitpläne", tab_log: "Protokoll", tab_settings: "Einstellungen",
     now: "Jetzt", next_tx: "Nächste Sendungen", queue: "Warteschlange", recent: "Letzte Sendungen", new_message: "Neue Nachricht",
@@ -99,6 +111,18 @@ const T = {
     practice_new: "Neue Übung", practice_copy: "Mitschrift", practice_check: "Prüfen", practice_score: "{ok} von {total} Gruppen richtig", practice_wrong_digits: "{n} falsche Ziffern",
   },
   en: {
+    tab_agents: "Agents", agent: "Agent", agent_name: "Agent name", new_agent: "Create agent",
+    agents_hint: "Add your friends as agents. Each agent can have multiple schedules with their own times, windows, weekdays, transmission intervals and radio frequencies.",
+    no_agents: "No agents yet. Add them under Agents.", no_agent: "General traffic (no agent)",
+    no_agent_schedule: "No active schedule yet. Messages wait until a schedule is active.",
+    schedule_agent_hint: "This schedule only sends messages for the selected agent. Without an agent it sends general traffic.",
+    recipients: "Recipients (agents)", recipients_hint: "Select multiple agents: each gets a separate copy at their scheduled times. Leave empty for general traffic.",
+    recipients_pad_hint: "All selected agents need a copy of the matching pad. With different pads, encrypt and submit the message separately for each agent.",
+    agent_schedules: "Agent's schedules", own_schedules: "Each agent's own schedules",
+    queued_many: "{n} messages are waiting for their scheduled times.", deleted_agent: "Deleted agent #{id}",
+    delete_agent_confirm: "Delete agent “{name}” and their schedules? Their queued messages will be cancelled.",
+    agent_saved: "Agent saved.", agent_deleted: "Agent deleted; their queued messages were cancelled.",
+    schedule_conflict: "Shared transmission time within the next 8 days with: {names}. Only one schedule can transmit at a time. Messages take precedence over filler; tied schedules take turns. For reliable reception, use separate times and allow for transmission length.",
     logout: "Log out", login: "Log in", password: "Password",
     tab_overview: "Overview", tab_messages: "Messages", tab_schedules: "Schedules", tab_log: "Log", tab_settings: "Settings",
     now: "Now", next_tx: "Next transmissions", queue: "Queue", recent: "Recent transmissions", new_message: "New message",
@@ -199,6 +223,12 @@ const T = {
 // The station answers in English; the frequent answers are translated here.
 const SERVER_ERRORS = {
   de: {
+    "the agent needs a name of 1 to 60 characters": "Der Agent braucht einen Namen mit 1 bis 60 Zeichen.",
+    "agent not found": "Agent nicht gefunden.",
+    "the schedule belongs to a different agent": "Dieser Zeitplan gehört zu einem anderen Agenten.",
+    "cancel queued messages for this schedule before changing its agent": "Brich zuerst die wartenden Nachrichten dieses Zeitplans ab, bevor du seinen Agenten änderst.",
+    "select between 1 and 100 agents": "Wähle zwischen 1 und 100 Agenten aus.",
+    "multiple agents use their own schedules; leave schedule_id empty": "Mehrere Agenten verwenden ihre jeweiligen Zeitpläne. Wähle keinen einzelnen Zeitplan aus.",
     "wrong password": "Falsches Passwort.",
     "too many wrong passwords; wait a minute": "Zu viele falsche Versuche. Warte eine Minute.",
     "the current password is wrong": "Das aktuelle Passwort stimmt nicht.",
@@ -219,7 +249,7 @@ const SERVER_ERRORS = {
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 let lang = "en";
-const state = {session: null, status: null, schedules: [], voices: null, settings: null, pads: [], msgFilter: "queued", tab: "overview"};
+const state = {session: null, status: null, schedules: [], agents: [], voices: null, settings: null, pads: [], msgFilter: "queued", tab: "overview"};
 
 function t(key, vars = {}) {
   let s = (T[lang] && T[lang][key]) ?? T.en[key] ?? key;
@@ -351,8 +381,8 @@ document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click"
 async function refreshTab() {
   try {
     if (state.tab === "overview") { await loadStatus(); await loadRecent(); }
-    if (state.tab === "messages") { await Promise.all([loadMessages(), loadPads()]); renderMsgForm(); }
-    if (state.tab === "schedules") { await loadSchedules(); }
+    if (state.tab === "messages") { await Promise.all([loadSchedules(), loadPads()]); await loadMessages(); renderMsgForm(); }
+    if (state.tab === "schedules" || state.tab === "agents") { await loadSchedules(); }
     if (state.tab === "log") { await loadLog(); }
     if (state.tab === "practice") { fillPracticeSelects(); }
     if (state.tab === "settings") { await Promise.all([loadSettings(), loadTokens(), loadPads(), loadOutput()]); renderSettings(); renderOutput(); }
@@ -435,6 +465,33 @@ async function loadRecent() {
 // ---------------------------------------------------------------- messages
 let msgMode = "groups";
 
+function selectedAgents() {
+  return [...$("msgAgents").querySelectorAll("input:checked")].map(c => +c.value);
+}
+
+function agentName(id) {
+  return id ? state.agents.find(a => a.id === id)?.name || t("deleted_agent", {id}) : t("no_agent");
+}
+
+function radioDescription(s) {
+  return [s.frequency_khz ? `${s.frequency_khz.toLocaleString(lang, {maximumFractionDigits: 3})} kHz` : "", s.rig_mode].filter(Boolean).join(" · ");
+}
+
+function conflictNote(s) {
+  return s.conflicts?.length ? `<p class="note warn">${esc(t("schedule_conflict", {names: s.conflicts.map(c => c.name).join(", ")}))}</p>` : "";
+}
+
+function renderRecipientSchedules() {
+  const ids = selectedAgents(), sel = $("msgSchedule"), keep = sel.value;
+  const schedules = state.schedules.filter(s => (s.agent_id || null) === (ids[0] || null));
+  sel.disabled = ids.length > 1;
+  sel.innerHTML = `<option value="">${esc(t(ids.length > 1 ? "own_schedules" : ids.length ? "agent_schedules" : "any_schedule"))}</option>` +
+    (ids.length > 1 ? "" : schedules.map(s => `<option value="${s.id}">${esc(s.name)} · ${esc(describe(s))}${s.enabled ? "" : ` (${esc(t("disabled"))})`}</option>`).join(""));
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : "";
+  $("msgPadHint").hidden = ids.length < 2;
+}
+$("msgAgents").addEventListener("change", renderRecipientSchedules);
+
 function renderMsgForm() {
   const allowed = state.settings && state.settings.station_encryption;
   $("msgModeSeg").hidden = !allowed;
@@ -442,9 +499,13 @@ function renderMsgForm() {
   document.querySelectorAll("#msgModeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === msgMode)));
   $("msgGroupsBox").hidden = msgMode !== "groups";
   $("msgTextBox").hidden = msgMode !== "text";
-  const sel = $("msgSchedule"), keep = sel.value;
-  sel.innerHTML = `<option value="">${esc(t("any_schedule"))}</option>` + state.schedules.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
-  sel.value = keep;
+  const selected = selectedAgents();
+  $("msgAgents").innerHTML = state.agents.length ? state.agents.map(a => {
+    const schedules = state.schedules.filter(s => s.agent_id === a.id && s.enabled);
+    return `<label class="check"><input type="checkbox" value="${a.id}" ${selected.includes(a.id) ? "checked" : ""}>
+      <span>${esc(a.name)}<small>${esc(schedules.length ? schedules.map(s => [describe(s), radioDescription(s)].filter(Boolean).join(" · ")).join(" / ") : t("no_agent_schedule"))}</small></span></label>`;
+  }).join("") : `<p class="muted">${esc(t("no_agents"))}</p>`;
+  renderRecipientSchedules();
   $("msgPad").innerHTML = state.pads.filter(p => !p.error).map(p => `<option value="${esc(p.name)}">${esc(p.name)} (${esc(t("pages_free", {free: p.unused, total: p.pages}))})</option>`).join("");
   updateGroupsInfo();
 }
@@ -467,16 +528,21 @@ $("msgForm").addEventListener("submit", async e => {
     not_before: fieldToIso($("msgNotBefore").value), expires: fieldToIso($("msgExpires").value),
     label: $("msgLabel").value, burn: $("msgBurn").checked,
   };
+  const recipients = selectedAgents();
+  if (recipients.length) data.agent_ids = recipients;
   if (msgMode === "text") { data.text = $("msgText").value; data.pad = $("msgPad").value; }
   else data.groups = $("msgGroups").value;
+  const submit = $("msgForm").querySelector("button[type=submit]");
+  submit.disabled = true;
   try {
     const m = await api("POST", "/api/messages", data);
-    note("msgMsg", t("queued_ok", {id: m.id}), "good");
+    note("msgMsg", m.messages ? t("queued_many", {n: m.messages.length}) : t("queued_ok", {id: m.id}), "good");
     $("msgGroups").value = ""; $("msgText").value = ""; $("msgLabel").value = "";
     updateGroupsInfo();
     await Promise.all([loadMessages(), loadPads()]);
     renderMsgForm();
   } catch (err) { note("msgMsg", err.message, "bad"); }
+  finally { submit.disabled = false; }
 });
 
 document.querySelectorAll("#msgFilter button").forEach(b => b.addEventListener("click", () => {
@@ -490,13 +556,14 @@ async function loadMessages() {
   const names = Object.fromEntries(state.schedules.map(s => [s.id, s.name]));
   if (!list.length) { $("msgList").innerHTML = `<p class="empty">${esc(t("no_messages"))}</p>`; return; }
   const prio = ["", "high", "urgent"];
-  $("msgList").innerHTML = `<div class="tbl-wrap"><table class="tbl"><tr><th>${t("col_id")}</th><th>${t("col_label")}</th><th>${t("col_groups")}</th><th>${t("col_prio")}</th><th>${t("col_sched")}</th><th>${t("col_sent")}</th><th>${t("col_status")}</th><th></th></tr>` +
+  $("msgList").innerHTML = `<div class="tbl-wrap"><table class="tbl"><tr><th>${t("col_id")}</th><th>${t("col_label")}</th><th>${t("col_groups")}</th><th>${t("col_prio")}</th><th>${t("agent")}</th><th>${t("col_sched")}</th><th>${t("col_sent")}</th><th>${t("col_status")}</th><th></th></tr>` +
     list.map(m => `<tr>
       <td class="mono">${m.id}</td>
       <td>${esc(m.label)}<details><summary>${m.groups ? m.group_count : esc(t("burned"))}</summary>${m.groups ? `<div class="out">${esc(m.groups.join(" "))}</div>` : ""}</details></td>
       <td class="mono">${m.group_count}</td>
       <td><span class="pill ${prio[m.priority]}">${esc(t("prio_" + m.priority))}</span></td>
-      <td>${esc(m.schedule_id ? names[m.schedule_id] || m.schedule_id : t("any_schedule"))}</td>
+      <td>${esc(agentName(m.agent_id))}</td>
+      <td>${esc(m.schedule_id ? names[m.schedule_id] || m.schedule_id : t(m.agent_id ? "agent_schedules" : "any_schedule"))}</td>
       <td class="mono">${m.sent_count}/${m.transmissions}</td>
       <td><span class="pill ${m.status}">${esc(t("st_" + m.status))}</span>${m.expires ? `<div class="muted">${esc(t("col_expires"))} ${utc(m.expires)}</div>` : ""}</td>
       <td>${m.status === "queued" ? `<button class="btn small danger" data-cancel="${m.id}">${esc(t("cancel_msg"))}</button>` : `<button class="btn small" data-delete="${m.id}">${esc(t("delete"))}</button>`}</td>
@@ -505,8 +572,68 @@ async function loadMessages() {
   $("msgList").querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", async () => { await api("DELETE", `/api/messages/${b.dataset.delete}`); loadMessages(); }));
 }
 
+// ---------------------------------------------------------------- agents
+let editingAgent = null;
+
+function resetAgentForm() {
+  editingAgent = null;
+  $("agentName").value = "";
+  $("agentSave").textContent = t("new_agent");
+  $("agentCancel").hidden = true;
+}
+$("agentCancel").addEventListener("click", resetAgentForm);
+$("agentForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const save = $("agentSave");
+  save.disabled = true;
+  try {
+    await api(editingAgent === null ? "POST" : "PUT", editingAgent === null ? "/api/agents" : `/api/agents/${editingAgent}`, {name: $("agentName").value.trim()});
+    resetAgentForm(); await loadSchedules();
+    note("agentMsg", t("agent_saved"), "good");
+  } catch (err) { note("agentMsg", err.message, "bad"); }
+  finally { save.disabled = false; }
+});
+
+function renderAgents() {
+  $("agentSave").textContent = t(editingAgent === null ? "new_agent" : "save");
+  const box = $("agentList");
+  box.innerHTML = state.agents.length ? state.agents.map(a => {
+    const schedules = state.schedules.filter(s => s.agent_id === a.id);
+    return `<div class="card"><h3>${esc(a.name)}</h3>
+      ${!schedules.some(s => s.enabled) ? `<p class="note warn">${esc(t("no_agent_schedule"))}</p>` : ""}
+      <ul class="agent-schedules">${schedules.map(s => `<li><b>${esc(s.name)}</b> <span class="pill ${s.enabled ? "ok" : ""}">${esc(t(s.enabled ? "enabled" : "disabled"))}</span>
+        <div class="muted">${esc(describe(s))}</div><div class="muted">${esc(radioDescription(s))}</div>
+        ${conflictNote(s)}
+        <button class="btn small" data-agent-schedule-edit="${s.id}">${esc(t("edit"))}</button></li>`).join("")}</ul>
+      <div class="actions"><button class="btn small primary" data-agent-schedule="${a.id}">${esc(t("new_schedule"))}</button>
+        <button class="btn small" data-agent-edit="${a.id}">${esc(t("edit"))}</button>
+        <button class="btn small danger" data-agent-delete="${a.id}">${esc(t("delete"))}</button></div></div>`;
+  }).join("") : `<p class="empty">${esc(t("no_agents"))}</p>`;
+  box.querySelectorAll("[data-agent-schedule]").forEach(b => b.addEventListener("click", () => openEditor(null, +b.dataset.agentSchedule)));
+  box.querySelectorAll("[data-agent-schedule-edit]").forEach(b => b.addEventListener("click", () => openEditor(state.schedules.find(s => s.id === +b.dataset.agentScheduleEdit))));
+  box.querySelectorAll("[data-agent-edit]").forEach(b => b.addEventListener("click", () => {
+    editingAgent = +b.dataset.agentEdit;
+    $("agentName").value = agentName(editingAgent);
+    $("agentSave").textContent = t("save"); $("agentCancel").hidden = false;
+    $("agentName").focus();
+  }));
+  box.querySelectorAll("[data-agent-delete]").forEach(b => b.addEventListener("click", async () => {
+    const id = +b.dataset.agentDelete;
+    if (!confirm(t("delete_agent_confirm", {name: agentName(id)}))) return;
+    try {
+      await api("DELETE", `/api/agents/${id}`);
+      if (editingAgent === id) resetAgentForm();
+      await loadSchedules(); await loadStatus();
+      note("agentMsg", t("agent_deleted"), "good");
+    } catch (err) { note("agentMsg", err.message, "bad"); }
+  }));
+}
+
 // ---------------------------------------------------------------- schedules
-async function loadSchedules() { state.schedules = await api("GET", "/api/schedules"); renderSchedules(); }
+async function loadSchedules() {
+  [state.schedules, state.agents] = await Promise.all([api("GET", "/api/schedules"), api("GET", "/api/agents")]);
+  renderSchedules(); renderAgents();
+}
 
 function describe(s) {
   const days = t("days");
@@ -525,7 +652,9 @@ function renderSchedules() {
   const voiceName = v => voices[voiceId(v)] || v;
   box.innerHTML = state.schedules.map(s => `<div class="card sched ${s.enabled ? "" : "off"}">
       <div class="head"><h3>${esc(s.name)}</h3><span class="pill ${s.enabled ? "ok" : ""}">${esc(s.enabled ? t("enabled") : t("disabled"))}</span></div>
+      <p class="muted">${esc(agentName(s.agent_id))}${radioDescription(s) ? ` · ${esc(radioDescription(s))}` : ""}</p>
       <div class="when">${esc(describe(s))}</div>
+      ${conflictNote(s)}
       <p class="muted">${esc(voiceName(s.voice))} · ${esc(t("callsign"))} ${esc(s.format.callsign || state.voices?.format_defaults.callsign || "")} · ${esc(t("filler_" + s.filler))}</p>
       <p class="muted">${esc(s.upcoming.length ? t("next_runs", {list: s.upcoming.map(x => inZone(x, s.timezone)).join(", ")}) : t("none_planned"))}</p>
       <div class="actions">
@@ -626,15 +755,17 @@ function fillerVisibility() {
 }
 $("sFiller").addEventListener("change", fillerVisibility);
 
-function openEditor(s) {
+function openEditor(s, agentId = null) {
   const d = state.voices.format_defaults;
   editing = s ? s.id : null;
-  s = s || {name: "", enabled: true, kind: "times", times: ["18:00"], weekdays: [0, 1, 2, 3, 4, 5, 6], interval_minutes: 60, offset_minutes: 0,
-            window_start: "", window_end: "", timezone: "UTC",
+  s = s || {name: agentId ? agentName(agentId) : "", agent_id: agentId, enabled: true, kind: agentId ? "interval" : "times", times: ["18:00"], weekdays: [0, 1, 2, 3, 4, 5, 6], interval_minutes: 60, offset_minutes: 0,
+            window_start: agentId ? "18:00" : "", window_end: agentId ? "19:00" : "", timezone: agentId ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" : "UTC",
             voice: state.voices.voices[0]?.id || "de", effect: "none", format: {}, filler: "random", filler_min: 10, filler_max: 30, max_messages: 1};
   const f = Object.assign({}, d, s.format);
   $("schedTitle").textContent = s.name || t("new_schedule");
   $("sName").value = s.name; $("sEnabled").checked = s.enabled;
+  $("sAgent").innerHTML = `<option value="">${esc(t("no_agent"))}</option>` + state.agents.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
+  $("sAgent").value = s.agent_id || "";
   setKind(s.kind);
   $("sTimes").value = s.times.join(", ");
   $("sInterval").value = s.interval_minutes; $("sOffset").value = s.offset_minutes;
@@ -669,6 +800,7 @@ function editorData() {
   for (const k of Object.keys(fmt)) if (fmt[k] === d[k]) delete fmt[k];
   return {
     name: $("sName").value.trim(), enabled: $("sEnabled").checked, kind: editKind,
+    agent_id: $("sAgent").value ? +$("sAgent").value : null,
     times: $("sTimes").value.split(/[,\s]+/).filter(Boolean),
     weekdays: [...$("sDays").querySelectorAll("input:checked")].map(c => +c.value),
     interval_minutes: +$("sInterval").value, offset_minutes: $("sWinStart").value ? 0 : +$("sOffset").value,
@@ -681,13 +813,16 @@ function editorData() {
 }
 
 $("schedSave").addEventListener("click", async () => {
+  if (!$("schedForm").reportValidity()) return;
   note("schedMsg", "");
+  $("schedSave").disabled = true;
   try {
     if (editing === null) await api("POST", "/api/schedules", editorData());
     else await api("PUT", `/api/schedules/${editing}`, editorData());
     $("schedDialog").close();
     await loadSchedules(); await loadStatus();
   } catch (err) { note("schedMsg", err.message, "bad"); }
+  finally { $("schedSave").disabled = false; }
 });
 $("schedPreview").addEventListener("click", () => preview("/api/preview", {schedule: editorData()}, "schedMsg"));
 $("schedCancel").addEventListener("click", () => $("schedDialog").close());

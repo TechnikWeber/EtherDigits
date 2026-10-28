@@ -90,13 +90,43 @@ shows when the station is on air and how loud.
 1. Station, tab **Messages**. Paste the groups.
 2. Choose how urgent it is, in how many transmissions it should go out, and
    when it expires. Leave *Delete the digits after the last transmission* on.
-3. Click **Add to queue**.
+3. For a specific receiver, select their **Agent**. Select several agents to
+   queue a separate copy for each, or leave the selection empty for general
+   station traffic.
+4. Click **Add to queue**.
 
 At its next slot the station reads your message instead of random groups. The
 **Log** shows each transmission with its transcript and a recording.
 
 From somewhere else? Create an **API token** under Settings and send the groups
 with one HTTP request; see the [README](../README.md#the-station).
+
+### Different listening times for different friends
+
+Open **Agents**, create a name for each friend, and click **New schedule** on
+their card. For example:
+
+| Recipient | Kind | Window | Interval | Time zone |
+|---|---|---|---|---|
+| Agent A | Every N minutes | 13:00–14:00 | 15 minutes | Europe/Berlin |
+| Agent B | Every N minutes | 18:00–19:00 | 30 minutes | Europe/Berlin |
+
+Choose weekdays and tick **Active**. You can also use fixed times, add multiple
+schedules to the same agent, and change each schedule's radio frequency and
+mode (requires CAT under Settings). The interval controls how often a slot is
+available; **Number of transmissions** on the message controls how many slots
+that message uses, separately for each recipient. The end of a window is an
+allowed start time; a transmission may finish after it.
+
+Leave enough time between agents for a complete transmission. Identical start
+times within the next eight days are marked with a warning. At a shared slot,
+queued messages beat filler and equally ready schedules take turns; the other
+agent waits for a later slot. Different frequencies still use the same transmitter.
+
+Select both agents under **Messages** to send the same groups in their respective
+windows. They need copies of the matching pad to decrypt those groups. If each
+friend has a separate pad, encrypt and submit separately, selecting only that
+friend. Agents without an active schedule keep their messages waiting.
 
 ## 6. Receive and decrypt
 
@@ -134,7 +164,9 @@ stream, a dummy load, local playback, or a service licensed for it.
 
 1. **Never use a page twice.** The tool refuses, but only if you save the pad
    after every message.
-2. **Only two copies of the pad.** Hand them over in person.
+2. **Only intended recipients hold the pad.** Use a separate pad for each friend
+   for private messages; a shared pad lets every holder read the group's messages.
+   Hand copies over in person.
 3. **Destroy a page after use**, on paper and in your head.
 4. **Keep the pad away from the station.** The station only needs digit groups.
 5. **Let the filler run.** A station that only speaks when there is news gives

@@ -39,6 +39,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="overview" data-i18n="tab_overview"></button>
     <button role="tab" data-tab="messages" data-i18n="tab_messages"></button>
+    <button role="tab" data-tab="agents" data-i18n="tab_agents"></button>
     <button role="tab" data-tab="schedules" data-i18n="tab_schedules"></button>
     <button role="tab" data-tab="log" data-i18n="tab_log"></button>
     <button role="tab" data-tab="practice" data-i18n="tab_practice"></button>
@@ -106,6 +107,12 @@
             <input type="number" id="msgTransmissions" min="1" max="100" value="1"></div>
         </div>
         <p class="muted" data-i18n="transmissions_hint"></p>
+        <fieldset class="recipients">
+          <legend data-i18n="recipients"></legend>
+          <div id="msgAgents"></div>
+          <p class="muted" data-i18n="recipients_hint"></p>
+          <p class="muted" id="msgPadHint" hidden data-i18n="recipients_pad_hint"></p>
+        </fieldset>
         <label for="msgSchedule" data-i18n="schedule"></label>
         <select id="msgSchedule"></select>
         <div class="row">
@@ -128,6 +135,24 @@
         <div id="msgList" style="margin-top:12px"></div>
       </div>
     </div>
+  </section>
+
+  <!-- AGENTS -->
+  <section role="tabpanel" id="tab-agents" hidden>
+    <div class="card">
+      <h2 data-i18n="tab_agents"></h2>
+      <p class="muted" data-i18n="agents_hint"></p>
+      <form id="agentForm">
+        <label for="agentName" data-i18n="agent_name"></label>
+        <input type="text" id="agentName" maxlength="60" required>
+        <div class="actions">
+          <button class="btn primary" id="agentSave" type="submit" data-i18n="new_agent"></button>
+          <button class="btn" id="agentCancel" type="button" hidden data-i18n="cancel"></button>
+        </div>
+      </form>
+      <div class="note" id="agentMsg"></div>
+    </div>
+    <div id="agentList" class="grid" style="margin-top:14px"></div>
   </section>
 
   <!-- SCHEDULES -->
@@ -320,6 +345,8 @@
   <form id="schedForm" method="dialog">
     <h2 id="schedTitle"></h2>
     <label for="sName" data-i18n="name"></label><input type="text" id="sName" maxlength="60" required>
+    <label for="sAgent" data-i18n="agent"></label><select id="sAgent"></select>
+    <p class="muted" data-i18n="schedule_agent_hint"></p>
     <label class="check" style="margin-top:12px"><input type="checkbox" id="sEnabled"> <span data-i18n="enabled"></span></label>
     <label data-i18n="when"></label>
     <div class="seg" id="sKindSeg">
@@ -346,7 +373,7 @@
       <div><label for="sEffect" data-i18n="effect"></label><select id="sEffect"></select></div>
     </div>
     <div class="row">
-      <div><label for="sFreq" data-i18n="frequency"></label><input type="number" id="sFreq" min="0" step="0.1" placeholder="0"></div>
+      <div><label for="sFreq" data-i18n="frequency"></label><input type="number" id="sFreq" min="0" step="any" placeholder="0"></div>
       <div><label for="sRigMode" data-i18n="rig_mode"></label><select id="sRigMode"></select></div>
     </div>
     <p class="muted" data-i18n="frequency_hint"></p>
@@ -372,9 +399,9 @@
         <div><label for="fMsgRepeats" data-i18n="message_repeats"></label><input type="number" id="fMsgRepeats" min="1" max="100"></div>
       </div>
       <div class="row">
-        <div><label for="fDigitGap" data-i18n="digit_gap"></label><input type="number" id="fDigitGap" min="0" max="30" step="0.05"></div>
-        <div><label for="fGroupGap" data-i18n="group_gap"></label><input type="number" id="fGroupGap" min="0" max="30" step="0.1"></div>
-        <div><label for="fSectionGap" data-i18n="section_gap"></label><input type="number" id="fSectionGap" min="0" max="30" step="0.1"></div>
+        <div><label for="fDigitGap" data-i18n="digit_gap"></label><input type="number" id="fDigitGap" min="0" max="30" step="any"></div>
+        <div><label for="fGroupGap" data-i18n="group_gap"></label><input type="number" id="fGroupGap" min="0" max="30" step="any"></div>
+        <div><label for="fSectionGap" data-i18n="section_gap"></label><input type="number" id="fSectionGap" min="0" max="30" step="any"></div>
       </div>
       <label class="check"><input type="checkbox" id="fCount"> <span data-i18n="announce_count"></span></label>
       <label class="check"><input type="checkbox" id="fTwice"> <span data-i18n="group_twice"></span></label>

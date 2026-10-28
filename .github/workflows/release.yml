@@ -29,6 +29,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt pyinstaller
+      - name: Test before packaging
+        run: python -m unittest -q
+      - run: node --check web/app.js
       - run: pyinstaller --noconfirm packaging/etherdigits.spec
       - name: Smoke test
         shell: bash
