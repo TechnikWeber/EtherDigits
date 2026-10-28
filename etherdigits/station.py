@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +20,8 @@ from pathlib import Path
 import numpy as np
 
 from .groups import random_groups
-from .render import DEFAULT_RATE, render, write_wav
+from .radio import Meter, Rig, Transmitter
+from .render import DEFAULT_RATE, render, tone, write_wav
 from .schedule import Schedule, iso, utcnow
 from .script import Transmission, build_script, transcript
 from .store import Store
@@ -28,17 +30,11 @@ from .voicepack import VoicePack, find_pack
 log = logging.getLogger("etherdigits.station")
 
 
-class SilentOutput:
-    """No radio yet: the station keeps real time, so 'on air' lasts as long as the audio."""
-
-    name = "silent"
+class SilentOutput(Transmitter):
+    """No radio: real time and a moving meter, no sound. Tests use realtime=False."""
 
     def __init__(self, realtime: bool = True):
-        self.realtime = realtime
-
-    async def play(self, audio: np.ndarray, rate: int) -> None:
-        if self.realtime:
-            await asyncio.sleep(len(audio) / rate)
+        super().__init__({"mode": "silent"}, realtime=realtime)
 
 
 @dataclass
@@ -60,8 +56,10 @@ class Station:
     def __init__(self, store: Store, data_dir: Path, output=None, clock=utcnow, rate: int = DEFAULT_RATE):
         self.store = store
         self.data_dir = Path(data_dir)
-        self.output = output or SilentOutput()
+        self.fixed_output = output  # tests pass one; otherwise it comes from the settings
         self.clock = clock
+        self.meter = Meter()
+        self._stop = threading.Event()
         self.rate = rate
         self.current: dict | None = None
         self.next_runs: dict[int, datetime | None] = {}
@@ -100,13 +98,26 @@ class Station:
 
     # --- transmitting ------------------------------------------------------
 
+    def transmitter(self) -> Transmitter:
+        if self.fixed_output is not None:
+            return self.fixed_output
+        return Transmitter(self.store.get("output") or {})
+
+    @property
+    def output(self) -> Transmitter:
+        return self.transmitter()
+
+    def _log_skip(self, schedule: Schedule, when: datetime, status: str, error: str) -> int:
+        return self.store.add_log(started=iso(when), schedule_id=schedule.id, schedule_name=schedule.name,
+                                  status=status, error=error)
+
     async def transmit(self, schedule: Schedule, at: datetime | None = None, test: bool = False) -> int | None:
         """Prepare, wait for the slot, send, log. Returns the log entry id."""
         discreet = bool(self.store.get("discreet"))
+        if self.store.get("tx_blocked"):
+            return self._log_skip(schedule, at or self.clock(), "blocked", "the transmitter is locked (emergency stop)")
         if self._lock.locked():
-            return self.store.add_log(started=iso(at or self.clock()), schedule_id=schedule.id,
-                                      schedule_name=schedule.name, status="busy",
-                                      error="another transmission was still on air")
+            return self._log_skip(schedule, at or self.clock(), "busy", "another transmission was still on air")
         async with self._lock:
             started = at or self.clock()
             planned = None
@@ -114,16 +125,31 @@ class Station:
                 planned = self.plan(schedule, started, test=test)
                 if planned is None:
                     return None
+                tx = self.transmitter()
                 audio = await asyncio.to_thread(self.render, planned)
+                seconds = len(audio) / self.rate
+                limit = tx.cfg["max_tx_seconds"]
+                if seconds > limit:
+                    raise RuntimeError(f"the transmission would last {seconds:.0f} s, the limit is {limit} s")
+                await asyncio.to_thread(tx.check)
+                await asyncio.to_thread(self._tune, tx, schedule)
                 if at is not None:
                     wait = (at - self.clock()).total_seconds()
                     if wait > 0:
                         await asyncio.sleep(wait)
+                if self.store.get("tx_blocked"):
+                    return self._log_skip(schedule, started, "blocked", "the transmitter is locked (emergency stop)")
                 started = self.clock()
-                seconds = len(audio) / self.rate
                 self.current = {"schedule": schedule.name, "schedule_id": schedule.id, "started": iso(started),
                                 "duration": round(seconds, 1)}
-                await self.output.play(audio, self.rate)
+                self._stop.clear()
+                result = await tx.play(audio, self.rate, self.meter, self._stop)
+                if result.stopped:
+                    # Not fully sent: the messages stay in the queue.
+                    return self.store.add_log(started=iso(started), duration=round(result.seconds, 1),
+                                              schedule_id=schedule.id, schedule_name=schedule.name,
+                                              status="stopped", error="emergency stop",
+                                              kind="" if discreet else planned.kind)
                 if planned.message_ids:
                     self.store.mark_sent(planned.message_ids, iso(started))
                 recording = "" if discreet else await asyncio.to_thread(self._record, audio, started, schedule)
@@ -135,6 +161,11 @@ class Station:
                     transcript="" if discreet else planned.text(),
                 )
             except asyncio.CancelledError:
+                self._stop.set()
+                if self.current is not None:  # cut off on air by a shutdown: on record, messages stay queued
+                    self.store.add_log(started=iso(started), schedule_id=schedule.id, schedule_name=schedule.name,
+                                       status="stopped", error="the station was shut down",
+                                       kind="" if discreet or planned is None else planned.kind)
                 raise
             except Exception as exc:  # the station must survive any single failure
                 log.exception("transmission failed")
@@ -143,6 +174,42 @@ class Station:
                                           kind="" if discreet or planned is None else planned.kind)
             finally:
                 self.current = None
+
+    def _tune(self, tx: Transmitter, schedule: Schedule) -> None:
+        """Set frequency and mode before the slot, when CAT is on and the schedule names them."""
+        if not tx.cfg["cat"] or not (schedule.frequency_khz or schedule.rig_mode):
+            return
+        rig = Rig(tx.cfg["rig_host"], tx.cfg["rig_port"])
+        if schedule.frequency_khz:
+            rig.set_frequency(round(schedule.frequency_khz * 1000))
+        if schedule.rig_mode:
+            rig.set_mode(schedule.rig_mode)
+
+    def emergency_stop(self) -> None:
+        """Cut the running transmission at once and lock the transmitter until released."""
+        self.store.set("tx_blocked", True)
+        self._stop.set()
+
+    async def test_tone(self, seconds: float = 3.0) -> int | None:
+        """A 1 kHz tone through the whole chain (PTT included), for setting levels."""
+        if self.store.get("tx_blocked"):
+            raise RuntimeError("the transmitter is locked (emergency stop)")
+        if self._lock.locked():
+            raise RuntimeError("a transmission is on air")
+        async with self._lock:
+            tx = self.transmitter()
+            await asyncio.to_thread(tx.check)
+            audio = tone(1000, seconds, self.rate, level=0.5)
+            started = self.clock()
+            self.current = {"schedule": "1 kHz", "schedule_id": None, "started": iso(started), "duration": seconds}
+            self._stop.clear()
+            try:
+                result = await tx.play(audio, self.rate, self.meter, self._stop)
+            finally:
+                self.current = None
+            return self.store.add_log(started=iso(started), duration=round(result.seconds, 1),
+                                      schedule_name="1 kHz", kind="test",
+                                      status="stopped" if result.stopped else "ok")
 
     def _record(self, audio: np.ndarray, started: datetime, schedule: Schedule) -> str:
         folder = self.data_dir / "recordings" / started.strftime("%Y-%m-%d")
@@ -209,6 +276,7 @@ class Station:
 
     async def stop(self) -> None:
         self._stopping = True
+        self._stop.set()
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -223,5 +291,7 @@ class Station:
             "next": [{"schedule_id": sid, "schedule": names.get(sid, "?"), "at": iso(t)} for t, sid in runs[:10]],
             "queue": self.store.queue_size(),
             "output": self.output.name,
+            "monitor": bool(self.output.cfg["monitor"]),
+            "blocked": bool(self.store.get("tx_blocked")),
             "discreet": discreet,
         }

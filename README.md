@@ -21,9 +21,10 @@ REPEAT 21347 47890 11203
 END
 ```
 
-> Version 0.3: voices, transmission format, the one-time pad tool, and the
-> station service with queue, schedules, web interface and API. Radio output
-> (sound card, PTT, CAT) follows next; see [docs/plan.md](docs/plan.md).
+> Version 0.4: voices, transmission format, the one-time pad tool, the station
+> service with queue, schedules, web interface and API, and radio output with
+> sound card, monitor, level meter, PTT and CAT. Not yet tested with a real
+> radio; see [docs/plan.md](docs/plan.md).
 
 ## Install
 
@@ -36,7 +37,10 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt      # Windows: .venv\Scripts\pip
 ```
 
-For MP3 output, install `ffmpeg` or `lame`. WAV works without either.
+For MP3 output, install `ffmpeg` or `lame`. WAV works without either. Sound
+card output uses PortAudio, which comes with `sounddevice` on Windows and
+macOS; on Linux install it with the system (`sudo dnf install portaudio`,
+`sudo apt install libportaudio2`). For CAT, install Hamlib.
 
 ## Use
 
@@ -69,10 +73,11 @@ python -m etherdigits serve
 
 Then open <http://127.0.0.1:8472/>. The station transmits on its schedules
 around the clock, fills quiet slots with random groups, logs every
-transmission and keeps recordings for a week. Until radio output arrives
-(stage 4), transmissions run in real time and are recorded only.
+transmission and keeps recordings for a week. Out of the box it has no radio
+output: transmissions run in real time without sound. Set up the output under
+Settings.
 
-![The station's web interface: on air, next transmissions, queue](docs/station.jpg)
+![The station's web interface: on air with the level meter, next transmissions, queue](docs/station.jpg)
 
 | Tab | What it does |
 |---|---|
@@ -81,6 +86,29 @@ transmission and keeps recordings for a week. Until radio output arrives
 | Schedules | fixed UTC times on chosen weekdays, or every N minutes; voice, callsign, filler, the whole transmission layout; listen to a preview, transmit now |
 | Log | every transmission with its transcript and recording |
 | Settings | admin password, discreet log, API tokens, pads for encrypting on the station |
+
+**Output and radio** (Settings → Output and radio):
+
+| Setting | What it does |
+|---|---|
+| Output | none, or the sound card that feeds the radio, with its level in dB |
+| Monitor | plays the same transmission on a second device of the station computer, e.g. its speakers, to hear what goes out. Off by default |
+| PTT | VOX (the radio keys itself), a serial line (RTS/DTR, e.g. Digirig), or CAT; with lead and tail time |
+| CAT | sets frequency and mode per schedule through Hamlib's `rigctld` |
+| Transmit limit | no transmission runs longer; too long ones are refused before going on air |
+
+The level meter in the header and on the overview shows live whether the
+station is on air and how loud, with or without a radio. **Emergency stop**
+cuts the running transmission at once and locks the transmitter until you
+release it; scheduled slots are logged as locked and their messages stay
+queued. **Test tone** sends 3 s of 1 kHz through the whole chain for setting
+levels. Schedules can end with a Morse identification.
+
+CAT needs `rigctld` running next to the station, for example:
+
+```sh
+rigctld -m 3073 -r /dev/ttyUSB0      # model 3073 = Icom IC-7300; list models with: rigctl -l
+```
 
 **Filler.** When nothing is waiting, a schedule sends random groups that look
 exactly like a message, says "no message", or stays silent. Only the first

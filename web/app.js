@@ -60,6 +60,23 @@ const T = {
     pad_upload: "Heft hochladen", pad_uploaded: "Heft gespeichert.", no_pads: "Keine Hefte.", pages_free: "{free} von {total} Seiten frei",
     delete_pad_confirm: "Heft „{name}“ von der Station löschen?",
     err_network: "Keine Verbindung zur Station.",
+    stop: "STOPP", emergency_stop: "Notaus", release: "Sender freigeben",
+    blocked_banner: "Notaus ausgelöst: Der Sender ist gesperrt, geplante Sendungen fallen aus. Gib ihn in der Übersicht wieder frei.",
+    out_silent: "Keine Funkausgabe: Sendungen laufen in Echtzeit ohne Ton und werden aufgezeichnet.", out_soundcard: "Ausgabe auf die Soundkarte des Funkgeräts.",
+    out_monitor: "Mithören am Stationsrechner ist an.",
+    output_title: "Ausgabe und Funkgerät", output_mode: "Ausgabe", mode_silent: "keine (nur Echtzeit und Aufnahme)", mode_soundcard: "Soundkarte zum Funkgerät",
+    device: "Soundkarte", default_device: "Systemstandard", gain: "Pegel (dB)",
+    monitor: "Mithören am Stationsrechner", monitor_hint: "Spielt dieselbe Sendung parallel auf einem zweiten Gerät ab, zum Beispiel auf den eingebauten Lautsprechern. Standardmäßig aus.",
+    monitor_device: "Gerät zum Mithören",
+    ptt: "Sendetaste (PTT)", ptt_none: "VOX (das Funkgerät schaltet selbst)", ptt_serial: "Serielle Leitung (RTS/DTR, z. B. Digirig)", ptt_cat: "CAT über rigctld",
+    serial_port: "Serieller Port", serial_line: "Leitung", serial_invert: "Umgekehrt (Leitung aus = senden)",
+    ptt_lead: "PTT-Vorlauf (ms)", ptt_tail: "PTT-Nachlauf (ms)",
+    cat: "Frequenz und Betriebsart per CAT setzen (Hamlib rigctld)", cat_hint: "rigctld muss laufen, z. B.: rigctld -m 3073 -r /dev/ttyUSB0. Die Frequenz steht dann im Zeitplan.",
+    rig_host: "rigctld-Adresse", rig_port: "Port", max_tx: "Längste erlaubte Sendung (s)",
+    test_tone: "Testton 3 s", test_cat: "CAT testen", cat_ok: "Funkgerät antwortet: {f} kHz", tone_started: "Testton läuft.",
+    frequency: "Frequenz (kHz, 0 = nicht ändern)", frequency_hint: "Wird nur gesetzt, wenn CAT in den Einstellungen an ist.", rig_mode: "Betriebsart", rig_mode_keep: "nicht ändern",
+    cw_ident: "Morse-Kennung am Schluss", cw_wpm: "Tempo (WpM)",
+    st_blocked: "gesperrt", st_stopped: "abgebrochen",
   },
   en: {
     logout: "Log out", login: "Log in", password: "Password",
@@ -119,6 +136,23 @@ const T = {
     pad_upload: "Upload pad", pad_uploaded: "Pad stored.", no_pads: "No pads.", pages_free: "{free} of {total} pages unused",
     delete_pad_confirm: "Delete pad “{name}” from the station?",
     err_network: "No connection to the station.",
+    stop: "STOP", emergency_stop: "Emergency stop", release: "Release transmitter",
+    blocked_banner: "Emergency stop: the transmitter is locked and scheduled transmissions are skipped. Release it on the overview.",
+    out_silent: "No radio output: transmissions run in real time without sound and are recorded.", out_soundcard: "Output to the radio's sound card.",
+    out_monitor: "Monitoring on the station computer is on.",
+    output_title: "Output and radio", output_mode: "Output", mode_silent: "none (real time and recording only)", mode_soundcard: "sound card to the radio",
+    device: "Sound card", default_device: "system default", gain: "Level (dB)",
+    monitor: "Monitor on the station computer", monitor_hint: "Plays the same transmission on a second device at the same time, for example the built-in speakers. Off by default.",
+    monitor_device: "Monitor device",
+    ptt: "Push to talk (PTT)", ptt_none: "VOX (the radio keys itself)", ptt_serial: "Serial line (RTS/DTR, e.g. Digirig)", ptt_cat: "CAT via rigctld",
+    serial_port: "Serial port", serial_line: "Line", serial_invert: "Inverted (line off = transmit)",
+    ptt_lead: "PTT lead (ms)", ptt_tail: "PTT tail (ms)",
+    cat: "Set frequency and mode by CAT (Hamlib rigctld)", cat_hint: "rigctld must be running, e.g.: rigctld -m 3073 -r /dev/ttyUSB0. The frequency is then set per schedule.",
+    rig_host: "rigctld address", rig_port: "Port", max_tx: "Longest allowed transmission (s)",
+    test_tone: "Test tone 3 s", test_cat: "Test CAT", cat_ok: "The radio answers: {f} kHz", tone_started: "Test tone playing.",
+    frequency: "Frequency (kHz, 0 = leave it)", frequency_hint: "Only set when CAT is switched on in the settings.", rig_mode: "Mode", rig_mode_keep: "leave it",
+    cw_ident: "Morse identification at the end", cw_wpm: "Speed (wpm)",
+    st_blocked: "locked", st_stopped: "stopped",
   },
 };
 
@@ -135,6 +169,7 @@ const SERVER_ERRORS = {
     "groups (or text and pad) are needed": "Zahlengruppen fehlen.",
     "a pad with this name is already on the station": "Ein Heft mit diesem Namen liegt schon auf der Station.",
     "this schedule sends nothing when the queue is empty": "Dieser Zeitplan sendet nichts, solange die Warteschlange leer ist.",
+    "the transmitter is locked (emergency stop)": "Der Sender ist gesperrt (Notaus).",
   },
 };
 const $ = id => document.getElementById(id);
@@ -225,7 +260,8 @@ async function startApp() {
   if (!state.session.logged_in) { showLogin(); return; }
   $("login").hidden = true; $("app").hidden = false;
   $("logoutBtn").hidden = !state.session.password_set;
-  $("banner").innerHTML = state.session.password_set ? "" : `<div class="note warn">${esc(t("no_password_local"))}</div>`;
+  renderBanner();
+  startMeter();
   state.voices = await api("GET", "/api/voices");
   await Promise.all([loadStatus(), loadSchedules(), loadSettings()]);
   fillStaticSelects();
@@ -263,11 +299,44 @@ async function refreshTab() {
     if (state.tab === "messages") { await Promise.all([loadMessages(), loadPads()]); renderMsgForm(); }
     if (state.tab === "schedules") { await loadSchedules(); }
     if (state.tab === "log") { await loadLog(); }
-    if (state.tab === "settings") { await Promise.all([loadSettings(), loadTokens(), loadPads()]); renderSettings(); }
+    if (state.tab === "settings") { await Promise.all([loadSettings(), loadTokens(), loadPads(), loadOutput()]); renderSettings(); renderOutput(); }
   } catch (err) { if (err.status !== 401) console.warn(err); }
 }
 
 function renderAll() { renderStatus(); renderSchedules(); fillStaticSelects(); refreshTab(); }
+
+// ---------------------------------------------------------------- banner, meter, emergency stop
+function renderBanner() {
+  const parts = [];
+  if (state.status?.blocked) parts.push(`<div class="note bad">${esc(t("blocked_banner"))}</div>`);
+  if (state.session && !state.session.password_set) parts.push(`<div class="note warn">${esc(t("no_password_local"))}</div>`);
+  $("banner").innerHTML = parts.join("");
+}
+
+let meterSource = null;
+function startMeter() {
+  if (meterSource || typeof EventSource === "undefined") return;
+  meterSource = new EventSource("/api/meter");
+  meterSource.onmessage = e => { try { showMeter(JSON.parse(e.data)); } catch { /* ignore a broken frame */ } };
+}
+
+function showMeter(m) {
+  for (const el of [$("meterTop"), $("meterBig")]) {
+    el.style.setProperty("--lvl", `${(m.level * 100).toFixed(1)}%`);
+    el.style.setProperty("--pk", `${(m.peak * 100).toFixed(1)}%`);
+    el.classList.toggle("live", m.on_air);
+    el.setAttribute("aria-valuenow", String(Math.round(m.level * 100)));
+  }
+  $("airDot").className = "dot " + (m.on_air ? "air" : "idle");
+  $("stopTop").hidden = !m.on_air;
+}
+
+async function emergencyStop() {
+  try { await api("POST", "/api/stop", {}); } finally { await loadStatus(); }
+}
+$("stopTop").addEventListener("click", emergencyStop);
+$("stopBig").addEventListener("click", emergencyStop);
+$("releaseBtn").addEventListener("click", async () => { await api("POST", "/api/release", {}); await loadStatus(); });
 
 // ---------------------------------------------------------------- overview
 async function loadStatus() { state.status = await api("GET", "/api/status"); renderStatus(); }
@@ -275,13 +344,14 @@ async function loadStatus() { state.status = await api("GET", "/api/status"); re
 function renderStatus() {
   const s = state.status;
   if (!s) return;
-  const dot = $("airDot");
-  dot.className = "dot " + (s.on_air ? "air" : "idle");
   $("onAir").innerHTML = s.on_air
     ? `<h3>${esc(t("on_air"))}</h3><p class="muted">${esc(t("on_air_detail", {schedule: s.on_air.schedule, since: utc(s.on_air.started, false), duration: s.on_air.duration}))}</p>`
     : `<h3>${esc(t("idle"))}</h3>`;
-  $("outputNote").textContent = s.output === "silent" ? t("output_silent") : "";
+  $("outputNote").textContent = (s.output === "silent" ? t("out_silent") : t("out_soundcard")) + (s.monitor ? " " + t("out_monitor") : "");
   $("queueCount").textContent = s.queue;
+  $("stopBig").hidden = s.blocked;
+  $("releaseBtn").hidden = !s.blocked;
+  renderBanner();
   renderNext();
 }
 
@@ -463,6 +533,7 @@ function fillStaticSelects() {
   $("sVoice").innerHTML = v.voices.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
   $("sEffect").innerHTML = v.effects.map(e => `<option value="${e}">${esc(t("effect_" + e))}</option>`).join("");
   $("fInterval").innerHTML = v.intervals.map(i => `<option value="${i}">${esc(t("iv_" + i))}</option>`).join("");
+  $("sRigMode").innerHTML = v.rig_modes.map(m => `<option value="${m}">${esc(m || t("rig_mode_keep"))}</option>`).join("");
   const days = t("days");
   $("sDays").innerHTML = days.map((d, i) => `<label><input type="checkbox" value="${i}"> ${esc(d)}</label>`).join("");
 }
@@ -495,6 +566,8 @@ function openEditor(s) {
   $("sDays").querySelectorAll("input").forEach(c => { c.checked = s.weekdays.includes(+c.value); });
   $("sVoice").value = voiceId(s.voice); $("sEffect").value = s.effect;
   $("sCallsign").value = f.callsign; $("sMax").value = s.max_messages;
+  $("sFreq").value = s.frequency_khz || ""; $("sRigMode").value = s.rig_mode || "";
+  $("fCw").value = f.cw_ident || ""; $("fCwWpm").value = f.cw_wpm;
   $("sFiller").value = s.filler; $("sFillerMin").value = s.filler_min; $("sFillerMax").value = s.filler_max;
   $("fInterval").value = f.interval; $("fIntervalRepeats").value = f.interval_repeats;
   $("fCallRepeats").value = f.callsign_repeats; $("fMsgRepeats").value = f.message_repeats;
@@ -513,6 +586,7 @@ function editorData() {
     callsign_repeats: +$("fCallRepeats").value, message_repeats: +$("fMsgRepeats").value,
     digit_gap: +$("fDigitGap").value, group_gap: +$("fGroupGap").value, section_gap: +$("fSectionGap").value,
     announce_group_count: $("fCount").checked, group_twice: $("fTwice").checked, end_tone: $("fEndTone").checked,
+    cw_ident: $("fCw").value.trim().toUpperCase(), cw_wpm: +$("fCwWpm").value,
   };
   // Store only what differs from the defaults, so improved defaults reach old schedules.
   for (const k of Object.keys(fmt)) if (fmt[k] === d[k]) delete fmt[k];
@@ -524,6 +598,7 @@ function editorData() {
     voice: $("sVoice").value, effect: $("sEffect").value, format: fmt,
     filler: $("sFiller").value, filler_min: +$("sFillerMin").value, filler_max: +$("sFillerMax").value,
     max_messages: +$("sMax").value,
+    frequency_khz: +$("sFreq").value || 0, rig_mode: $("sRigMode").value,
   };
 }
 
@@ -643,6 +718,73 @@ $("padFile").addEventListener("change", async e => {
     note("padMsg", t("pad_uploaded"), "good");
     await loadPads(); renderSettings();
   } catch (err) { note("padMsg", err.message, "bad"); }
+});
+
+// ---------------------------------------------------------------- output and radio
+async function loadOutput() {
+  [state.output, state.devices] = await Promise.all([api("GET", "/api/output"), api("GET", "/api/output/devices")]);
+}
+
+function deviceOptions(selected) {
+  const list = state.devices.devices;
+  let html = `<option value="">${esc(t("default_device"))}</option>`;
+  html += list.map(d => `<option value="${esc(d.name)}">${esc(d.name)} · ${esc(d.hostapi)}${d.default ? " ★" : ""}</option>`).join("");
+  if (selected && !list.some(d => d.name === selected)) html += `<option value="${esc(selected)}">${esc(selected)} (?)</option>`;
+  return html;
+}
+
+function renderOutput() {
+  const o = state.output;
+  $("oMode").value = o.mode;
+  $("oDevice").innerHTML = deviceOptions(o.device); $("oDevice").value = o.device;
+  $("oMonitorDevice").innerHTML = deviceOptions(o.monitor_device); $("oMonitorDevice").value = o.monitor_device;
+  $("oGain").value = o.gain_db; $("oMonitor").checked = o.monitor; $("oMonitorGain").value = o.monitor_gain_db;
+  $("oPtt").value = o.ptt; $("oSerialPort").value = o.serial_port; $("oSerialLine").value = o.serial_line;
+  $("oInvert").checked = o.serial_invert; $("oLead").value = o.ptt_lead_ms; $("oTail").value = o.ptt_tail_ms;
+  $("oCat").checked = o.cat; $("oRigHost").value = o.rig_host; $("oRigPort").value = o.rig_port; $("oMax").value = o.max_tx_seconds;
+  $("oSerialPorts").innerHTML = state.devices.serial_ports.map(p => `<option value="${esc(p.device)}">${esc(p.description)}</option>`).join("");
+  if (state.devices.error) note("outMsg", state.devices.error, "warn");
+  outputVisibility();
+}
+
+function outputVisibility() {
+  const radio = $("oMode").value === "soundcard";
+  $("oRadioBox").hidden = !radio; $("oPttBox").hidden = !radio;
+  $("oMonitorBox").hidden = !$("oMonitor").checked;
+  $("oSerialBox").hidden = $("oPtt").value !== "serial"; $("oInvertBox").hidden = $("oPtt").value !== "serial";
+  $("oCatBox").hidden = !$("oCat").checked;
+}
+["oMode", "oMonitor", "oPtt", "oCat"].forEach(id => $(id).addEventListener("change", outputVisibility));
+
+function outputData() {
+  return {
+    mode: $("oMode").value, device: $("oDevice").value, gain_db: +$("oGain").value,
+    monitor: $("oMonitor").checked, monitor_device: $("oMonitorDevice").value, monitor_gain_db: +$("oMonitorGain").value,
+    ptt: $("oPtt").value, serial_port: $("oSerialPort").value.trim(), serial_line: $("oSerialLine").value,
+    serial_invert: $("oInvert").checked, ptt_lead_ms: +$("oLead").value, ptt_tail_ms: +$("oTail").value,
+    cat: $("oCat").checked, rig_host: $("oRigHost").value.trim(), rig_port: +$("oRigPort").value,
+    max_tx_seconds: +$("oMax").value,
+  };
+}
+
+$("outForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try { state.output = await api("PUT", "/api/output", outputData()); note("outMsg", t("saved"), "good"); loadStatus(); }
+  catch (err) { note("outMsg", err.message, "bad"); }
+});
+$("oTestTone").addEventListener("click", async () => {
+  try {
+    state.output = await api("PUT", "/api/output", outputData());  // test what is on the screen
+    await api("POST", "/api/output/test", {what: "tone", seconds: 3});
+    note("outMsg", t("tone_started"), "good");
+  } catch (err) { note("outMsg", err.message, "bad"); }
+});
+$("oTestCat").addEventListener("click", async () => {
+  try {
+    state.output = await api("PUT", "/api/output", outputData());
+    const r = await api("POST", "/api/output/test", {what: "cat"});
+    note("outMsg", t("cat_ok", {f: (r.frequency_hz / 1000).toLocaleString(lang, {maximumFractionDigits: 3})}), "good");
+  } catch (err) { note("outMsg", err.message, "bad"); }
 });
 
 // ---------------------------------------------------------------- start

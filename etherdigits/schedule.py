@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta, timezone
 
 from .groups import GroupError
+from .radio import RIG_MODES
 from .render import EFFECTS
 from .script import Format
 
@@ -42,6 +43,8 @@ class Schedule:
     filler_min: int = 10
     filler_max: int = 30
     max_messages: int = 1                     # messages per transmission
+    frequency_khz: float = 0.0                # 0 = leave the radio as it is (needs CAT)
+    rig_mode: str = ""                        # e.g. AM, USB; "" = leave as it is
 
     def validate(self) -> "Schedule":
         self.name = (self.name or "").strip()[:60]
@@ -78,6 +81,15 @@ class Schedule:
             raise ScheduleError("filler length: 1 to 500 groups, minimum not above maximum")
         if not 1 <= int(self.max_messages) <= 20:
             raise ScheduleError("messages per transmission: 1 to 20")
+        try:
+            self.frequency_khz = float(self.frequency_khz or 0)
+        except (TypeError, ValueError) as exc:
+            raise ScheduleError("the frequency must be a number in kHz") from exc
+        if self.frequency_khz and not 100 <= self.frequency_khz <= 10_000_000:
+            raise ScheduleError("the frequency must be between 100 kHz and 10 GHz (in kHz), or 0")
+        self.rig_mode = str(self.rig_mode or "").upper()
+        if self.rig_mode not in RIG_MODES:
+            raise ScheduleError(f"mode must be one of {', '.join(m for m in RIG_MODES if m)}")
         try:
             self.station_format()
         except GroupError as exc:

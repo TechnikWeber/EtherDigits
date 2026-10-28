@@ -73,13 +73,21 @@ card, a radio or an internet stream.
 - [x] Optional encryption on the station from uploaded pads, off by default
 - [x] Discreet log: no difference between message and filler on record
 
-### 4. Radio
+### 4. Radio (done in 0.4, not yet tried on a real radio)
 
-- [ ] Sound card output with device selection (`sounddevice`), VOX
-- [ ] PTT via serial RTS/DTR (e.g. Digirig), GPIO on a Raspberry Pi
-- [ ] CAT via Hamlib `rigctld`: frequency and mode per schedule, PTT
-- [ ] Transmit time limit, emergency stop, PTT always released on errors
-- [ ] Morse identification
+- [x] Sound card output with device selection and level; resampled to the
+      device's rate
+- [x] Monitor: the same audio on a second device of the station computer, off
+      by default
+- [x] Live level meter (server-sent events) in the header and on the overview
+- [x] PTT: VOX, serial RTS/DTR (also inverted), CAT; lead and tail time; always
+      released on errors
+- [x] CAT via Hamlib `rigctld`: frequency and mode per schedule, set before the
+      slot; a failure cancels the transmission
+- [x] Transmit time limit, checked before going on air and while playing
+- [x] Emergency stop that locks the transmitter until released; test tone
+- [x] Morse identification at the end of a transmission
+- [ ] GPIO PTT on a Raspberry Pi
 
 ### 5. Unattended and remote
 

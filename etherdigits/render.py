@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .script import Melody, Pause, Say, Step, Tone
+from .script import Melody, Morse, Pause, Say, Step, Tone
 from .voicepack import VoicePack
 
 DEFAULT_RATE = 22050
@@ -52,6 +52,33 @@ def melody(name: str, rate: int) -> np.ndarray:
     return np.concatenate([chime(note, sec, rate) for note, sec in MELODIES[name]])
 
 
+MORSE = {
+    "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.", "G": "--.", "H": "....", "I": "..",
+    "J": ".---", "K": "-.-", "L": ".-..", "M": "--", "N": "-.", "O": "---", "P": ".--.", "Q": "--.-", "R": ".-.",
+    "S": "...", "T": "-", "U": "..-", "V": "...-", "W": ".--", "X": "-..-", "Y": "-.--", "Z": "--..",
+    "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-", "5": ".....", "6": "-....",
+    "7": "--...", "8": "---..", "9": "----.", "/": "-..-.",
+}
+
+
+def morse(text: str, wpm: int, rate: int, freq: float = 700.0, level: float = 0.4) -> np.ndarray:
+    """Morse code with the PARIS timing: a dot lasts 1.2 / wpm seconds."""
+    unit = 1.2 / wpm
+    parts: list[np.ndarray] = []
+    gap = lambda units: np.zeros(int(rate * unit * units), dtype=np.float32)  # noqa: E731
+    for w, word in enumerate(text.upper().split()):
+        if w:
+            parts.append(gap(7))
+        for c, ch in enumerate(word):
+            if c:
+                parts.append(gap(3))
+            for s, sym in enumerate(MORSE.get(ch, "")):
+                if s:
+                    parts.append(gap(1))
+                parts.append(tone(freq, unit * (3 if sym == "-" else 1), rate, level))
+    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+
+
 def render(steps: list[Step], pack: VoicePack, rate: int = DEFAULT_RATE, effect: str = "none") -> np.ndarray:
     """Audio for a script as float32 mono in -1..1."""
     if effect not in EFFECTS:
@@ -68,6 +95,8 @@ def render(steps: list[Step], pack: VoicePack, rate: int = DEFAULT_RATE, effect:
             parts.append(tone(step.freq, step.seconds, rate))
         elif isinstance(step, Melody):
             parts.append(melody(step.name, rate))
+        elif isinstance(step, Morse):
+            parts.append(morse(step.text, step.wpm, rate))
     parts.append(edge)
     audio = np.concatenate(parts).astype(np.float32)
     if effect == "radio":

@@ -11,6 +11,8 @@
 <header class="top">
   <h1><span class="dot" id="airDot"></span>EtherDigits</h1>
   <div class="clock" id="clock"></div>
+  <div class="meter small" id="meterTop" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Level"><div class="fill"></div><div class="peak"></div></div>
+  <button class="btn small stop" id="stopTop" hidden data-i18n="stop"></button>
   <div class="spacer"></div>
   <div class="lang" role="group" aria-label="Language">
     <button class="btn small" data-lang="de">DE</button>
@@ -46,7 +48,13 @@
       <div class="card">
         <h2 data-i18n="now"></h2>
         <div id="onAir"></div>
+        <div class="meter big" id="meterBig" role="meter" aria-valuemin="0" aria-valuemax="100" aria-label="Level"><div class="fill"></div><div class="peak"></div></div>
+        <div class="scale"><span style="left:0">-60</span><span style="left:33.3%">-40</span><span style="left:66.7%">-20</span><span style="left:100%">0 dB</span></div>
         <p class="muted" id="outputNote"></p>
+        <div class="actions">
+          <button class="btn stop" id="stopBig" data-i18n="emergency_stop"></button>
+          <button class="btn" id="releaseBtn" hidden data-i18n="release"></button>
+        </div>
       </div>
       <div class="card">
         <h2 data-i18n="next_tx"></h2>
@@ -157,7 +165,51 @@
         </form>
       </div>
       <div>
-        <div class="card">
+        <form class="card" id="outForm">
+          <h2 data-i18n="output_title"></h2>
+          <label for="oMode" data-i18n="output_mode"></label>
+          <select id="oMode"><option value="silent" data-i18n="mode_silent"></option><option value="soundcard" data-i18n="mode_soundcard"></option></select>
+          <div id="oRadioBox">
+            <div class="row">
+              <div style="flex:3"><label for="oDevice" data-i18n="device"></label><select id="oDevice"></select></div>
+              <div><label for="oGain" data-i18n="gain"></label><input type="number" id="oGain" min="-40" max="12" step="0.5"></div>
+            </div>
+          </div>
+          <label class="check" style="margin-top:14px"><input type="checkbox" id="oMonitor"> <span data-i18n="monitor"></span></label>
+          <p class="muted" data-i18n="monitor_hint"></p>
+          <div class="row" id="oMonitorBox">
+            <div style="flex:3"><label for="oMonitorDevice" data-i18n="monitor_device"></label><select id="oMonitorDevice"></select></div>
+            <div><label for="oMonitorGain" data-i18n="gain"></label><input type="number" id="oMonitorGain" min="-40" max="12" step="0.5"></div>
+          </div>
+          <div id="oPttBox">
+            <label for="oPtt" data-i18n="ptt"></label>
+            <select id="oPtt"><option value="none" data-i18n="ptt_none"></option><option value="serial" data-i18n="ptt_serial"></option><option value="cat" data-i18n="ptt_cat"></option></select>
+            <div class="row" id="oSerialBox">
+              <div style="flex:2"><label for="oSerialPort" data-i18n="serial_port"></label><input type="text" id="oSerialPort" list="oSerialPorts" placeholder="/dev/ttyUSB0, COM3"><datalist id="oSerialPorts"></datalist></div>
+              <div><label for="oSerialLine" data-i18n="serial_line"></label><select id="oSerialLine"><option value="rts">RTS</option><option value="dtr">DTR</option><option value="both">RTS + DTR</option></select></div>
+            </div>
+            <label class="check" id="oInvertBox"><input type="checkbox" id="oInvert"> <span data-i18n="serial_invert"></span></label>
+            <div class="row">
+              <div><label for="oLead" data-i18n="ptt_lead"></label><input type="number" id="oLead" min="0" max="5000" step="50"></div>
+              <div><label for="oTail" data-i18n="ptt_tail"></label><input type="number" id="oTail" min="0" max="5000" step="50"></div>
+            </div>
+            <label class="check" style="margin-top:14px"><input type="checkbox" id="oCat"> <span data-i18n="cat"></span></label>
+            <p class="muted" data-i18n="cat_hint"></p>
+            <div class="row" id="oCatBox">
+              <div style="flex:2"><label for="oRigHost" data-i18n="rig_host"></label><input type="text" id="oRigHost"></div>
+              <div><label for="oRigPort" data-i18n="rig_port"></label><input type="number" id="oRigPort" min="1" max="65535"></div>
+            </div>
+          </div>
+          <label for="oMax" data-i18n="max_tx"></label>
+          <input type="number" id="oMax" min="10" max="7200" style="max-width:160px">
+          <div class="actions">
+            <button class="btn primary" type="submit" data-i18n="save"></button>
+            <button class="btn" type="button" id="oTestTone" data-i18n="test_tone"></button>
+            <button class="btn" type="button" id="oTestCat" data-i18n="test_cat"></button>
+          </div>
+          <div class="note" id="outMsg"></div>
+        </form>
+        <div class="card" style="margin-top:16px">
           <h2 data-i18n="tokens"></h2>
           <p class="muted" data-i18n="tokens_hint"></p>
           <form class="row" id="tokenForm" style="align-items:flex-end">
@@ -202,6 +254,11 @@
       <div><label for="sEffect" data-i18n="effect"></label><select id="sEffect"></select></div>
     </div>
     <div class="row">
+      <div><label for="sFreq" data-i18n="frequency"></label><input type="number" id="sFreq" min="0" step="0.1" placeholder="0"></div>
+      <div><label for="sRigMode" data-i18n="rig_mode"></label><select id="sRigMode"></select></div>
+    </div>
+    <p class="muted" data-i18n="frequency_hint"></p>
+    <div class="row">
       <div><label for="sCallsign" data-i18n="callsign"></label><input type="text" id="sCallsign" inputmode="numeric" maxlength="10"></div>
       <div><label for="sMax" data-i18n="max_messages"></label><input type="number" id="sMax" min="1" max="20"></div>
     </div>
@@ -230,6 +287,10 @@
       <label class="check"><input type="checkbox" id="fCount"> <span data-i18n="announce_count"></span></label>
       <label class="check"><input type="checkbox" id="fTwice"> <span data-i18n="group_twice"></span></label>
       <label class="check"><input type="checkbox" id="fEndTone"> <span data-i18n="end_tone"></span></label>
+      <div class="row">
+        <div style="flex:2"><label for="fCw" data-i18n="cw_ident"></label><input type="text" id="fCw" maxlength="20" placeholder="DL0XYZ"></div>
+        <div><label for="fCwWpm" data-i18n="cw_wpm"></label><input type="number" id="fCwWpm" min="5" max="40"></div>
+      </div>
     </details>
     <div class="note bad" id="schedMsg"></div>
     <div class="actions">

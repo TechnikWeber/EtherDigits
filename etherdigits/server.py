@@ -28,6 +28,7 @@ from aiohttp import web
 from . import __version__, otp
 from .auth import Sessions, Throttle, check_new_password, hash_password, verify_password
 from .groups import GroupError
+from .radio import RIG_MODES, RadioError, Rig, list_devices, serial_ports, validate_output
 from .render import EFFECTS, MELODIES, write_wav
 from .schedule import FILLERS, Schedule, ScheduleError, iso, parse_iso
 from .script import INTERVALS, Format
@@ -79,7 +80,7 @@ async def errors(request: web.Request, handler):
         return await handler(request)
     except ApiError as exc:
         return web.json_response({"error": str(exc)}, status=exc.status)
-    except (StoreError, ScheduleError, GroupError, otp.OtpError, VoicePackError) as exc:
+    except (StoreError, ScheduleError, GroupError, otp.OtpError, VoicePackError, RadioError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
 
 
@@ -197,7 +198,7 @@ async def get_status(request: web.Request) -> web.Response:
 async def get_voices(request: web.Request) -> web.Response:
     packs = [{"id": p.id, "name": p.name, "language": p.language, "license": p.license} for p in list_packs()]
     return web.json_response({"voices": packs, "effects": list(EFFECTS), "intervals": list(INTERVALS),
-                              "melodies": list(MELODIES), "fillers": list(FILLERS),
+                              "melodies": list(MELODIES), "fillers": list(FILLERS), "rig_modes": list(RIG_MODES),
                               "format_defaults": Format().__dict__})
 
 
@@ -449,6 +450,77 @@ async def delete_pad(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+# --- radio output ------------------------------------------------------------------
+
+def output_config(store: Store) -> dict:
+    return validate_output({}, store.get("output") or {})
+
+
+async def get_output(request: web.Request) -> web.Response:
+    return web.json_response(output_config(request.app[STORE]))
+
+
+async def put_output(request: web.Request) -> web.Response:
+    store = request.app[STORE]
+    cfg = validate_output(await body(request), output_config(store))
+    store.set("output", cfg)
+    return web.json_response(cfg)
+
+
+async def get_devices(_request: web.Request) -> web.Response:
+    try:
+        devices, error = await asyncio.to_thread(list_devices), ""
+    except RadioError as exc:
+        devices, error = [], str(exc)
+    return web.json_response({"devices": devices, "error": error,
+                              "serial_ports": await asyncio.to_thread(serial_ports)})
+
+
+async def post_output_test(request: web.Request) -> web.Response:
+    data = await body(request)
+    station = request.app[STATION]
+    if data.get("what") == "cat":
+        cfg = output_config(request.app[STORE])
+        hz = await asyncio.to_thread(Rig(cfg["rig_host"], cfg["rig_port"]).frequency)
+        return web.json_response({"frequency_hz": hz})
+    if station.current:
+        raise ApiError(409, "a transmission is on air")
+    if request.app[STORE].get("tx_blocked"):
+        raise ApiError(409, "the transmitter is locked (emergency stop)")
+    try:
+        seconds = min(30.0, max(0.5, float(data.get("seconds", 3))))
+    except (TypeError, ValueError):
+        raise ApiError(400, "seconds must be a number")
+    station.spawn(station.test_tone(seconds))
+    return web.json_response({"ok": True}, status=202)
+
+
+async def post_stop(request: web.Request) -> web.Response:
+    request.app[STATION].emergency_stop()
+    return web.json_response({"ok": True, "blocked": True})
+
+
+async def post_release(request: web.Request) -> web.Response:
+    request.app[STORE].set("tx_blocked", False)
+    return web.json_response({"ok": True, "blocked": False})
+
+
+async def get_meter(request: web.Request) -> web.StreamResponse:
+    """Server-sent events: the level ten times a second while on air, once a second otherwise."""
+    response = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-store",
+                                           "X-Accel-Buffering": "no"})
+    await response.prepare(request)
+    meter = request.app[STATION].meter
+    try:
+        while True:
+            snap = meter.snapshot()
+            await response.write(f"data: {json.dumps(snap)}\n\n".encode())
+            await asyncio.sleep(0.1 if snap["on_air"] else 1.0)
+    except (ConnectionResetError, asyncio.CancelledError):
+        pass
+    return response
+
+
 # --- app ---------------------------------------------------------------------------
 
 async def index(_request: web.Request) -> web.FileResponse:
@@ -490,6 +562,13 @@ def make_app(store: Store, station: Station, data_dir: Path, run_station: bool =
     r.add_get("/api/pads", get_pads)
     r.add_post("/api/pads", post_pad)
     r.add_delete("/api/pads/{name}", delete_pad)
+    r.add_get("/api/output", get_output)
+    r.add_put("/api/output", put_output)
+    r.add_get("/api/output/devices", get_devices)
+    r.add_post("/api/output/test", post_output_test)
+    r.add_post("/api/stop", post_stop)
+    r.add_post("/api/release", post_release)
+    r.add_get("/api/meter", get_meter)
 
     if run_station:
         async def start(app: web.Application) -> None:

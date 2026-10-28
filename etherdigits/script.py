@@ -44,7 +44,15 @@ class Melody:
     name: str  # see render.MELODIES
 
 
-Step = Say | Pause | Tone | Melody
+@dataclass(frozen=True)
+class Morse:
+    text: str
+    wpm: int = 20
+
+
+Step = Say | Pause | Tone | Melody | Morse
+
+MORSE_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/ ")
 
 INTERVALS = ("melody", "beeps", "none")
 
@@ -64,6 +72,8 @@ class Format:
     group_gap: float = 0.9           # seconds between groups
     section_gap: float = 1.6         # seconds between parts of the transmission
     end_tone: bool = True
+    cw_ident: str = ""               # callsign in Morse at the very end, e.g. a licence callsign
+    cw_wpm: int = 20
 
     def validate(self) -> None:
         self.callsign = validate_callsign(self.callsign)
@@ -75,6 +85,11 @@ class Format:
                 raise GroupError(f"{name} must be a whole number from 0 to 100")
         if self.message_repeats < 1:
             raise GroupError("message_repeats must be at least 1")
+        self.cw_ident = " ".join(str(self.cw_ident or "").upper().split())
+        if len(self.cw_ident) > 20 or not set(self.cw_ident) <= MORSE_CHARS:
+            raise GroupError("the Morse identification may use A-Z, 0-9 and / (at most 20)")
+        if not isinstance(self.cw_wpm, int) or not 5 <= self.cw_wpm <= 40:
+            raise GroupError("Morse speed must be 5 to 40 words per minute")
         for name in ("digit_gap", "group_gap", "section_gap"):
             value = getattr(self, name)
             if not isinstance(value, (int, float)) or not 0 <= value <= 30:
@@ -155,6 +170,8 @@ def build_script(tx: Transmission) -> list[Step]:
     section([Say("end")])
     if fmt.end_tone:
         section([Tone(800, 0.8)])
+    if fmt.cw_ident:
+        section([Morse(fmt.cw_ident, fmt.cw_wpm)])
     return steps
 
 
@@ -204,6 +221,9 @@ def transcript(steps: list[Step], fmt: Format) -> str:
         elif isinstance(step, Tone):
             flush_line()
             lines.append(f"[tone {step.freq:g} Hz]")
+        elif isinstance(step, Morse):
+            flush_line()
+            lines.append(f"[CW {step.text}]")
     flush_line()
     # Beeps come as several tones in a row; show them once.
     out: list[str] = []

@@ -1,2 +1,5 @@
 numpy>=1.24
 aiohttp>=3.9
+# radio output: sound card (needs PortAudio, see README) and serial PTT
+sounddevice>=0.4
+pyserial>=3.5

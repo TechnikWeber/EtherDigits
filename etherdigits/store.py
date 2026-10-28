@@ -66,6 +66,7 @@ DEFAULT_SETTINGS = {
     "keep_recordings_days": 7,
     "station_encryption": False,   # allow encrypting on the station with stored pads
     "lead_seconds": 20,            # render this long before the transmission
+    "tx_blocked": False,           # set by the emergency stop; nothing is sent until released
 }
 
 PRIORITIES = (0, 1, 2)             # normal, high, urgent
