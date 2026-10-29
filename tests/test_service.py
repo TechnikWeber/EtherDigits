@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -341,6 +342,38 @@ class Api(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, 400)
         r = await self.client.post("/api/schedules", json=dict(data, voice="klingon"), headers=self.h)
         self.assertEqual(r.status, 400)
+
+    async def test_saved_previews_reload_replaced_clips_for_language_and_id(self):
+        with patch("etherdigits.voicepack.BUILTIN_DIR", self.data):
+            routes = []
+            originals = []
+            for voice in ("xx", "test-xx"):
+                r = await self.client.post("/api/schedules", headers=self.h, json={
+                    "name": voice, "enabled": False, "voice": voice,
+                    "filler": "null", "format": {"interval": "none"},
+                })
+                self.assertEqual(r.status, 201)
+                route = f"/api/schedules/{(await r.json())['id']}/preview"
+                routes.append(route)
+                r = await self.client.post(route, json={}, headers=self.h)
+                self.assertEqual(r.status, 200)
+                originals.append(await r.read())
+            self.assertEqual(originals[0], originals[1])
+
+            # Replace a clip with different sound but the same size, without
+            # touching pack.json or restarting the station.
+            folder = Path(self.voice)
+            (folder / "attention.wav").write_bytes((folder / "4.wav").read_bytes())
+            updated = []
+            for route, original in zip(routes, originals):
+                r = await self.client.post(route, json={}, headers=self.h)
+                self.assertEqual(r.status, 200)
+                audio = await r.read()
+                self.assertNotEqual(audio, original)
+                updated.append(audio)
+            self.assertEqual(updated[0], updated[1])
+            self.assertEqual(self.store.log(), [])
+            self.assertEqual(self.store.queue_size(), 0)
 
     async def test_station_encryption_off_by_default(self):
         r = await self.client.post("/api/messages", json={"text": "hallo", "pad": "p"}, headers=self.h)

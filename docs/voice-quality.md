@@ -56,3 +56,22 @@ The automated checks do not replace listening. Review every token and a full
 transmission before publication, particularly distinctions between zero/nine,
 two/three and five/six. Local before/after WAV previews are generated in the
 ignored `out/voice-review/` directory during this investigation.
+
+## Running-server cache follow-up
+
+The first browser check used the practice endpoint, which loads a fresh voice
+pack. Saved schedule previews used `Station.pack`, which kept packs and decoded
+clips for the whole server lifetime, independently under `de` and
+`de-kerstin`. As a result, the existing `Station 472` schedule (`voice: de`)
+continued to use old audio after the files had been replaced. This was
+confirmed by comparing the localhost WAV byte for byte with a render using
+the cached old clips (and a newly loaded `no_message` clip).
+
+The station now resolves a fresh pack for each render, retaining the decoded
+clip cache only within that render. A regression test warms saved previews
+under both a language alias and a voice ID, replaces a same-sized WAV without
+changing the manifest, then verifies both previews change without restarting.
+Already downloaded browser audio needs a new click on “Probe anhören”.
+After restarting the local server with this change, both the saved-schedule
+API response and the WAV fetched by clicking that schedule's preview button
+in Chromium matched a fresh render from the corrected pack byte for byte.

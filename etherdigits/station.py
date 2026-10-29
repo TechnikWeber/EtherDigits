@@ -71,7 +71,6 @@ class Station:
         self.rate = rate
         self.current: dict | None = None
         self.next_runs: dict[int, datetime | None] = {}
-        self._packs: dict[str, VoicePack] = {}
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task] = set()
         self._version = -1
@@ -81,9 +80,11 @@ class Station:
     # --- planning ----------------------------------------------------------
 
     def pack(self, voice: str) -> VoicePack:
-        if voice not in self._packs:
-            self._packs[voice] = find_pack(voice)
-        return self._packs[voice]
+        # Resolve the current files for each transmission/preview. Keeping packs
+        # for the lifetime of the server leaves replaced clips cached forever,
+        # separately for language aliases ("de") and IDs ("de-kerstin"). The
+        # returned pack still caches each decoded clip throughout this render.
+        return find_pack(voice)
 
     def plan(self, schedule: Schedule, now: datetime | None = None, test: bool = False) -> Planned | None:
         """What this schedule would send now. Nothing is consumed until the transmission succeeds."""
