@@ -330,7 +330,8 @@ internet stream, a dummy load, local playback, or a service licensed for it.
 Node.js and checks that it agrees with `etherdigits/otp.py` digit for digit.
 
 New voice packs are built from Piper models with `scripts/build_voicepack.py`
-(needs `pip install piper-tts`).
+(Kerstin needs `pip install 'piper-tts[alignment]==1.8.0'` and sentence context;
+see [voice-pack instructions](voices/README.md)).
 
 The packaged programs are built by `.github/workflows/release.yml` with
 PyInstaller (`pyinstaller packaging/etherdigits.spec`) whenever a version tag is
