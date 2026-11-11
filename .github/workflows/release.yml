@@ -16,8 +16,12 @@ jobs:
         include:
           - os: windows-latest
             asset: etherdigits-windows-x64
+          - os: windows-11-arm  # Windows on ARM (Snapdragon laptops)
+            asset: etherdigits-windows-arm64
           - os: macos-latest
             asset: etherdigits-macos-arm64
+          - os: macos-15-intel  # Intel Macs
+            asset: etherdigits-macos-x64
           - os: ubuntu-22.04
             asset: etherdigits-linux-x64
           - os: ubuntu-22.04-arm  # Raspberry Pi OS 64-bit (bookworm and newer) and other ARM64 Linux
@@ -65,6 +69,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+      - name: Checksums
+        run: sha256sum *.zip > SHA256SUMS && cat SHA256SUMS
       - name: Release notes
         run: |
           notes="docs/release-notes-${GITHUB_REF_NAME#v}.md"
@@ -72,6 +78,8 @@ jobs:
           echo "NOTES=$notes" >> "$GITHUB_ENV"
       - uses: softprops/action-gh-release@v2
         with:
-          files: "*.zip"
+          files: |
+            *.zip
+            SHA256SUMS
           prerelease: true
           body_path: ${{ env.NOTES }}
