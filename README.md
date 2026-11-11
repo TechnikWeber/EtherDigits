@@ -2,12 +2,20 @@
 
 <p>
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange">
-  <a href="https://github.com/TechnikWeber/EtherDigits/releases"><img alt="Download" src="https://img.shields.io/github/v/release/TechnikWeber/EtherDigits?include_prereleases&label=download&color=2ea44f"></a>
+  <a href="https://github.com/TechnikWeber/EtherDigits/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/TechnikWeber/EtherDigits?include_prereleases&label=download&color=2ea44f"></a>
   <a href="https://github.com/TechnikWeber/EtherDigits/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/TechnikWeber/EtherDigits/total?color=blue"></a>
+  <a href="https://github.com/TechnikWeber/EtherDigits/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TechnikWeber/EtherDigits?style=flat&color=yellow"></a>
   <a href="https://github.com/TechnikWeber/EtherDigits/actions/workflows/tests.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/EtherDigits/tests.yml?branch=main&label=tests"></a>
   <img alt="Platform: Linux | Windows | macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue">
   <img alt="UI and voices: English | Deutsch" src="https://img.shields.io/badge/UI%20%26%20voices-English%20%7C%20Deutsch-informational">
   <a href="LICENSE"><img alt="License: MIT + no military use" src="https://img.shields.io/badge/license-MIT%20%2B%20no%20military-lightgrey"></a>
+</p>
+
+<p>
+  <a href="https://github.com/TechnikWeber/EtherDigits/releases/latest"><b>Download</b></a> &nbsp;·&nbsp;
+  <a href="docs/quickstart.md"><b>Quick start</b></a> &nbsp;·&nbsp;
+  <a href="docs/plan.md"><b>Plan</b></a> &nbsp;·&nbsp;
+  <a href="https://github.com/TechnikWeber/EtherDigits/releases"><b>Releases</b></a>
 </p>
 
 **Run your own numbers station.** EtherDigits reads out groups of digits in the
