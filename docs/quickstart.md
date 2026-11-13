@@ -179,7 +179,7 @@ stream, a dummy load, local playback, or a service licensed for it.
 |---|---|
 | Forgot the password | on the station run `etherdigits password`; it sets a new one without asking for the old |
 | Lost the authenticator app | on the station run `etherdigits totp-off` |
-| "sound output needs the sounddevice package and PortAudio" | Linux: `sudo apt install libportaudio2` or `sudo dnf install portaudio` |
+| "sound output needs the sounddevice package and PortAudio" | Linux: `sudo apt install libportaudio2`, `sudo dnf install portaudio` or `sudo pacman -S portaudio` |
 | Nothing happens at the scheduled time | is the schedule **Active**? Is the transmitter locked by an emergency stop? Look in the **Log** |
 | The clock warning appears | the system clock is off; the station already follows the time server, but set the system clock right |
 | Stream says it cannot connect | check server, port, mount point and source password; ffmpeg must be installed |

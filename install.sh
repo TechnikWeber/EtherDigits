@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EtherDigits installer for Linux (Fedora, Debian, Ubuntu, Raspberry Pi OS) and macOS.
+# EtherDigits installer for Linux (Fedora, Debian, Ubuntu, Raspberry Pi OS, Arch) and macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/TechnikWeber/EtherDigits/main/install.sh | bash
 #
@@ -53,6 +53,10 @@ if [ "$SYSTEM" -eq 1 ]; then
   elif command -v dnf >/dev/null; then
     sudo dnf install -y git python3 portaudio ffmpeg-free || sudo dnf install -y git python3 portaudio
     [ "$HAMLIB" -eq 1 ] && { sudo dnf install -y hamlib || warn "Hamlib was not installed"; }
+  elif command -v pacman >/dev/null; then
+    # Arch, EndeavourOS, Manjaro; Arch's python already has venv
+    sudo pacman -S --needed --noconfirm git python portaudio ffmpeg
+    [ "$HAMLIB" -eq 1 ] && { sudo pacman -S --needed --noconfirm hamlib || warn "Hamlib was not installed"; }
   else
     warn "unknown package manager; install Python 3.10+, git, PortAudio and ffmpeg yourself"
   fi
